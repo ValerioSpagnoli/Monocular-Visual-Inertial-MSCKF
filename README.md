@@ -1,6 +1,6 @@
 # Visual-Inertial MSCKF: Multi-State Constraint Kalman Filter for Monocular Visual-Inertial Navigation
 
-This repository contains the project based on my Master's Thesis "**Multi-State Constraint Kalman Filter for Monocular Visual-Inertial Navigation**".
+This repository contains the project based on my Master's Thesis [**Multi-State Constraint Kalman Filter for Monocular Visual-Inertial Navigation**](https://github.com/ValerioSpagnoli/Visual-Inertial-MSCKF/blob/main/thesis.pdf).
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/3a696c51-a02f-498d-bc86-25d39afb19bc" alt="deer_running">
@@ -13,7 +13,7 @@ This project implements and evaluates a Multi-State Constraint Kalman Filter (MS
 The thesis focuses on implementing the MSCKF algorithm, which leverages an Extended Kalman Filter (EKF) framework to integrate visual observations and inertial measurements. Unlike traditional filtering approaches that might include 3D feature positions directly in the state vector, the MSCKF formulates constraints between multiple camera poses that have observed the same static features. This allows the system to benefit from the information provided by these features without increasing the state vector size with every new feature, thus ensuring computational efficiency. The map is indirectly refined by optimizing camera poses within the EKF state.  
 
 Key enhancements to the standard MSCKF approach in this work include:
-* *XFeat Integration*: The XFeat library, a Convolutional Neural Network (CNN)-based architecture, is used for feature extraction and matching. XFeat offers a fast, precise, and hardware-independent solution for identifying and matching local features across image frames.   
+* *XFeat Integration*: The [XFeat](https://github.com/verlab/accelerated_features) library, a Convolutional Neural Network (CNN)-based architecture, is used for feature extraction and matching. XFeat offers a fast, precise, and hardware-independent solution for identifying and matching local features across image frames.   
 * *Epipolar Matching Refinement*: An epipolar geometry-based refinement step is incorporated into the matching pipeline. This significantly improves the accuracy of data association by eliminating false positive matches, without a substantial increase in computational cost.  
 
 The theoretical underpinnings of the project include projective geometry, IMU modeling, and Bayesian filtering techniques, particularly the EKF.
