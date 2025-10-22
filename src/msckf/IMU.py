@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 import numpy as np
 from src.utils.geometry import *
@@ -6,9 +6,9 @@ from src.utils.geometry import *
 @dataclass
 class IMUMeasurement:
     timestamp: float = 0.0
-    angular_velocity: np.ndarray = np.zeros((0, 3))
-    linear_acceleration: np.ndarray = np.zeros((0, 3))
-    gravity: np.ndarray = np.zeros((0, 3))
+    angular_velocity: np.ndarray = field(default_factory=lambda: np.zeros((0, 3)))
+    linear_acceleration: np.ndarray = field(default_factory=lambda: np.zeros((0, 3)))
+    gravity: np.ndarray = field(default_factory=lambda: np.zeros((0, 3)))
 
 class IMU:
     def __init__(self,

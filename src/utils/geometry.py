@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 from scipy.spatial.transform import Rotation as scipyR
 
@@ -13,8 +13,8 @@ class Line:
         confidence (float): Confidence of the line.
     """
     
-    base: np.ndarray = np.zeros(3)
-    direction: np.ndarray = np.zeros(3)
+    base: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    direction: np.ndarray = field(default_factory=lambda: np.zeros(3))
     confidence: float = 1.0
         
     def __str__(self) -> str:    

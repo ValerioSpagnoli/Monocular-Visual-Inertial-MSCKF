@@ -15,12 +15,12 @@ import rerun as rr
 class MSCKFParameters:
     
     #* Camera parameters
-    T_W_C: Isometry3D = Isometry3D(np.array([[ 0,  0, 1],
-                                             [-1,  0, 0],
-                                             [ 0, -1, 0]]), np.array([0, 0, 0]))
-    K: np.ndarray = np.array([[180,   0, 320],
-                              [  0, 180, 240],
-                              [  0,   0,   1]])
+    T_W_C: Isometry3D = field(default_factory=lambda: Isometry3D(np.array([[ 0,  0, 1],
+                                                                            [-1,  0, 0],
+                                                                            [ 0, -1, 0]]), np.array([0, 0, 0])))
+    K: np.ndarray = field(default_factory=lambda: np.array([[180,   0, 320],
+                                                            [  0, 180, 240],
+                                                            [  0,   0,   1]]))
     width: int = 640
     height: int = 480
     sigma_image: float = 0.2
@@ -31,7 +31,7 @@ class MSCKFParameters:
     accelerometer_random_walk: float = 0.00001
     gyroscope_noise_density: float = 0.0001
     gyroscope_random_walk: float = 0.000001
-    W_gravity: np.ndarray = np.array([0, 0, -9.81])
+    W_gravity: np.ndarray = field(default_factory=lambda: np.array([0, 0, -9.81]))
     
     #* Feature parameters
     number_of_extracted_features: int = 256
@@ -73,8 +73,8 @@ max_number_of_camera_states: {self.max_number_of_camera_states}'
 class MSCKFState:
     imu: IMU = None
     cameras: Dict[int, Camera] = field(default_factory=dict)
-    covariance: np.ndarray = np.zeros((15, 15))
-    continuous_noise_covariance: np.ndarray = np.eye(12)
+    covariance: np.ndarray = field(default_factory=lambda: np.zeros((15, 15)))
+    continuous_noise_covariance: np.ndarray = field(default_factory=lambda: np.eye(12))
 
 class MSCKF:
     def __init__(self, parameters: MSCKFParameters, rr = None):

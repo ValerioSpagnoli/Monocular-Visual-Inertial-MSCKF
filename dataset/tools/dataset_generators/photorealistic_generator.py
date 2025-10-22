@@ -7,7 +7,7 @@ from src.utils.geometry import *
 
 np.random.seed(42)
 
-BASE_DATASET_PATH = '/home/valeriospagnoli/Thesis/vio/dataset'
+BASE_DATASET_PATH = './data'
 
 class PhotorealisticGenerator():
     def __init__(self, source: str, sequence: str,

@@ -1,13 +1,21 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Tuple
 
+import sys
+import os
 import cv2
 import torch
 import numpy as np
 
 from src.msckf.Camera import Camera 
 from src.utils.geometry import *
-from src.accelerated_features.modules.xfeat import XFeat
+
+# Add the accelerated_features directory to sys.path so its internal imports work
+accelerated_features_path = os.path.join(os.path.dirname(__file__), '..', 'accelerated_features')
+if accelerated_features_path not in sys.path:
+    sys.path.insert(0, accelerated_features_path)
+
+from modules.xfeat import XFeat
 
 @dataclass
 class Feature:
@@ -16,11 +24,11 @@ class Feature:
     scores: List[np.ndarray] = field(default_factory=list)        # Score of the feature extraction procedure
     camera_indices: List[int] = field(default_factory=list)       # Indices of frames in which the feature was observed
     lines: List[Line] = field(default_factory=list)               # Inverse projection of each keypoint
-    inverse_depth_point: InverseDepthPoint = InverseDepthPoint()  # Inverse depth point of the feature
-    world_point: np.ndarray = np.zeros(3)                         # 3D position of the feature in the world frame
+    inverse_depth_point: InverseDepthPoint = field(default_factory=InverseDepthPoint)  # Inverse depth point of the feature
+    world_point: np.ndarray = field(default_factory=lambda: np.zeros(3))  # 3D position of the feature in the world frame
     tracked_for_n_frames: int = 0                                 # Number of frames in which the feature was observed
     lost_for_n_frames: int = 0                                    # Number of frames in which the feature was not observed
-    color: np.ndarray = np.zeros(3)                               #! DEBUG
+    color: np.ndarray = field(default_factory=lambda: np.zeros(3))  #! DEBUG
 
 @dataclass
 class CameraMeasurement:

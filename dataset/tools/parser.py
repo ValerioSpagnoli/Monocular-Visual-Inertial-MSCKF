@@ -5,7 +5,7 @@ import tqdm as tqdm
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-BASE_DATASET_PATH = '/home/valeriospagnoli/Thesis/vio/dataset'
+BASE_DATASET_PATH = './data'
 
 class Parser():
     def __init__(self, source: str, sequence: str,  gt: bool = True, initial_time_stamp: int = -1, final_time_stamp: int = -1):

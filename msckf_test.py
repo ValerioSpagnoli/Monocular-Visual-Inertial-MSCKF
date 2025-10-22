@@ -1,6 +1,7 @@
 import sys
 sys.path.append('../../')
 
+import os
 import numpy as np
 import pandas as pd
 import rerun as rr
@@ -21,10 +22,10 @@ from dataset.tools.dataset_generators.photorealistic_generator import Photoreali
 
 np.random.seed(42)
 
-BASE_DATASET_PATH = '/home/valeriospagnoli/Thesis/vio/dataset'
+BASE_DATASET_PATH = './data'
 source = 'tartanair' # ['synthetic', 'peringlab', 'tartanair']
-sequence = 'ME007'  
-max_frames = 2500
+sequence = 'P001'  
+max_frames = 500
 noise_level = 'mid' # ['low', 'mid', 'high']
 
 print(f'Running VIO on {source} dataset, sequence {sequence} with {noise_level} noise level')
@@ -39,49 +40,52 @@ width = camera_info.iloc[0]['w']
 height = camera_info.iloc[0]['h']
 
 save_results = False
-experiment_folder = f'/home/valeriospagnoli/Thesis/vio/experiments/{source}/{sequence}/{noise_level}_noise'
+experiment_folder = f'{BASE_DATASET_PATH}/{source}/{sequence}/{noise_level}_noise'
+if save_results:
+    if not os.path.exists(experiment_folder):
+        os.makedirs(experiment_folder)
+        
 
 
 #** Rerun setup
 # ========================================================================================== #
 
-log_images = False
-# rr.init('vio')
-# rr.spawn()
+log_images = True
+rr.init('vio', spawn=True)
 if save_results: rr.save(f'{experiment_folder}/recording.rrd')
 
-rr.log('relative_translation_error/t', rr.SeriesLine(name='Relative Translation Error VIO', color=[0, 0, 255]), static=True)
-rr.log('relative_orientation_error/r', rr.SeriesLine(name='Relative Orientation Error VIO', color=[0, 0, 255]), static=True)
+rr.log('relative_translation_error/t', rr.SeriesLines(names='Relative Translation Error VIO', colors=[0, 0, 255]), static=True)
+rr.log('relative_orientation_error/r', rr.SeriesLines(names='Relative Orientation Error VIO', colors=[0, 0, 255]), static=True)
 
-rr.log('absolute_translation_error/x', rr.SeriesLine(name='Absolute Translation Error x', color=[255, 0, 0]), static=True)
-rr.log('absolute_translation_error/xlb', rr.SeriesLine(name='lower bound', color=[200, 150, 0]), static=True)
-rr.log('absolute_translation_error/xub', rr.SeriesLine(name='upper bound', color=[200, 150, 0]), static=True)
+rr.log('absolute_translation_error/x', rr.SeriesLines(names='Absolute Translation Error x', colors=[255, 0, 0]), static=True)
+rr.log('absolute_translation_error/xlb', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
+rr.log('absolute_translation_error/xub', rr.SeriesLines(names='upper bound', colors=[200, 150, 0]), static=True)
 
-rr.log('absolute_translation_error/y', rr.SeriesLine(name='Absolute Translation Error y', color=[0, 255, 0]), static=True)
-rr.log('absolute_translation_error/ylb', rr.SeriesLine(name='lower bound', color=[200, 150, 0]), static=True)
-rr.log('absolute_translation_error/yub', rr.SeriesLine(name='upper bound', color=[200, 150, 0]), static=True)
+rr.log('absolute_translation_error/y', rr.SeriesLines(names='Absolute Translation Error y', colors=[0, 255, 0]), static=True)
+rr.log('absolute_translation_error/ylb', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
+rr.log('absolute_translation_error/yub', rr.SeriesLines(names='upper bound', colors=[200, 150, 0]), static=True)
 
-rr.log('absolute_translation_error/z', rr.SeriesLine(name='Absolute Translation Error z', color=[0, 0, 255]), static=True)
-rr.log('absolute_translation_error/zlb', rr.SeriesLine(name='lower bound', color=[200, 150, 0]), static=True)
-rr.log('absolute_translation_error/zub', rr.SeriesLine(name='lower bound', color=[200, 150, 0]), static=True)
+rr.log('absolute_translation_error/z', rr.SeriesLines(names='Absolute Translation Error z', colors=[0, 0, 255]), static=True)
+rr.log('absolute_translation_error/zlb', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
+rr.log('absolute_translation_error/zub', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
 
-rr.log('absolute_orientation_error/roll', rr.SeriesLine(name='Absolute Orientation Error roll', color=[255, 0, 0]), static=True)
-rr.log('absolute_orientation_error/rolllb', rr.SeriesLine(name='lower bound', color=[200, 150, 0]), static=True)
-rr.log('absolute_orientation_error/rollub', rr.SeriesLine(name='upper bound', color=[200, 150, 0]), static=True)
+rr.log('absolute_orientation_error/roll', rr.SeriesLines(names='Absolute Orientation Error roll', colors=[255, 0, 0]), static=True)
+rr.log('absolute_orientation_error/rolllb', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
+rr.log('absolute_orientation_error/rollub', rr.SeriesLines(names='upper bound', colors=[200, 150, 0]), static=True)
 
-rr.log('absolute_orientation_error/pitch', rr.SeriesLine(name='Absolute Orientation Error pitch', color=[0, 255, 0]), static=True)
-rr.log('absolute_orientation_error/pitchlb', rr.SeriesLine(name='lower bound', color=[200, 150, 0]), static=True)
-rr.log('absolute_orientation_error/pitchub', rr.SeriesLine(name='upper bound', color=[200, 150, 0]), static=True)
+rr.log('absolute_orientation_error/pitch', rr.SeriesLines(names='Absolute Orientation Error pitch', colors=[0, 255, 0]), static=True)
+rr.log('absolute_orientation_error/pitchlb', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
+rr.log('absolute_orientation_error/pitchub', rr.SeriesLines(names='upper bound', colors=[200, 150, 0]), static=True)
 
-rr.log('absolute_orientation_error/yaw', rr.SeriesLine(name='Absolute Orientation Error yaw', color=[0, 0, 255]), static=True)
-rr.log('absolute_orientation_error/yawlb', rr.SeriesLine(name='lower bound', color=[200, 150, 0]), static=True)
-rr.log('absolute_orientation_error/yawub', rr.SeriesLine(name='upper bound', color=[200, 150, 0]), static=True)
+rr.log('absolute_orientation_error/yaw', rr.SeriesLines(names='Absolute Orientation Error yaw', colors=[0, 0, 255]), static=True)
+rr.log('absolute_orientation_error/yawlb', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
+rr.log('absolute_orientation_error/yawub', rr.SeriesLines(names='upper bound', colors=[200, 150, 0]), static=True)
 
-rr.log('msckf/features', rr.SeriesLine(name='Number of Features', color=[200, 150, 0]), static=True)
-rr.log('msckf/camera_states', rr.SeriesLine(name='Number of Camera States', color=[200, 150, 0]), static=True)
-rr.log('msckf/NEES/metric', rr.SeriesLine(name='NEES', color=[200, 150, 0]), static=True)
-rr.log('msckf/NEES/compare_lower', rr.SeriesLine(name='Chi Square(0.05/2, 6)', color=[200, 0, 0]), static=True)
-rr.log('msckf/NEES/compare_upper', rr.SeriesLine(name='Chi Square(1 - 0.05/2, 6)', color=[0, 200, 0]), static=True)
+rr.log('msckf/features', rr.SeriesLines(names='Number of Features', colors=[200, 150, 0]), static=True)
+rr.log('msckf/camera_states', rr.SeriesLines(names='Number of Camera States', colors=[200, 150, 0]), static=True)
+rr.log('msckf/NEES/metric', rr.SeriesLines(names='NEES', colors=[200, 150, 0]), static=True)
+rr.log('msckf/NEES/compare_lower', rr.SeriesLines(names='Chi Square(0.05/2, 6)', colors=[200, 0, 0]), static=True)
+rr.log('msckf/NEES/compare_upper', rr.SeriesLines(names='Chi Square(1 - 0.05/2, 6)', colors=[0, 200, 0]), static=True)
 
 rr_trajectory_radii = 0.01
 rr_point_radii = 0.01
@@ -347,45 +351,45 @@ for i in tqdm(range(max_frames)):
     
     #** Logging
     # .......................................................................................... #    
-    # rr.set_time_sequence('frame', i)
+    rr.set_time_sequence('frame', i)
 
-    # rr.log('world/gt_trajectory_point', rr.Points3D(gt_positions, colors=[[0, 200, 0]], radii=rr_trajectory_radii))
-    # rr.log('world/estimated_trajectory', rr.Points3D(estimated_positions, colors=[[0, 0, 255]], radii=rr_trajectory_radii))
-    # rr.log('/world/camera_gt', rr.Transform3D(translation=T_W_I1_gt.t, mat3x3=T_W_I1_gt.R, axis_length=rr_axis_length))
-    # rr.log('/world/camera_vio', rr.Transform3D(translation=T_W_I1_est.t, mat3x3=T_W_I1_est.R, axis_length=rr_axis_length)) 
-    # rr.log('world/estimated_world_points', rr.Points3D(msckf.estimated_world_points, colors=[200, 200, 0], radii=rr_point_radii))
-    # rr.log('world/current_processed_world_points', rr.Points3D(msckf.currently_processed_world_points, colors=[[200, 0, 150]], radii=rr_point_radii + 0.01))
-    # rr.log('world/imu_position_covariance', rr.Ellipsoids3D(centers=[T_W_I1_gt.t], half_sizes=[3*sigmas_position], colors=[[255, 0, 0]], fill_mode=3))
+    rr.log('world/gt_trajectory_point', rr.Points3D(gt_positions, colors=[[0, 200, 0]], radii=rr_trajectory_radii))
+    rr.log('world/estimated_trajectory', rr.Points3D(estimated_positions, colors=[[0, 0, 255]], radii=rr_trajectory_radii))
+    rr.log('/world/camera_gt', rr.Transform3D(translation=T_W_I1_gt.t, mat3x3=T_W_I1_gt.R, axis_length=rr_axis_length))
+    rr.log('/world/camera_vio', rr.Transform3D(translation=T_W_I1_est.t, mat3x3=T_W_I1_est.R, axis_length=rr_axis_length)) 
+    rr.log('world/estimated_world_points', rr.Points3D(msckf.estimated_world_points, colors=[200, 200, 0], radii=rr_point_radii))
+    rr.log('world/current_processed_world_points', rr.Points3D(msckf.currently_processed_world_points, colors=[[200, 0, 150]], radii=rr_point_radii + 0.01))
+    rr.log('world/imu_position_covariance', rr.Ellipsoids3D(centers=[T_W_I1_gt.t], half_sizes=[3*sigmas_position], colors=[[255, 0, 0]], fill_mode=3))
         
-    # rr.log('relative_translation_error/t', rr.Scalar(rte_smoothed))
-    # rr.log('relative_orientation_error/r', rr.Scalar(roe_smoothed))
+    rr.log('relative_translation_error/t', rr.Scalars(rte_smoothed))
+    rr.log('relative_orientation_error/r', rr.Scalars(roe_smoothed))
     
-    # rr.log('absolute_translation_error/x', rr.Scalar(abs_T_error.t[0]))
-    # rr.log('absolute_translation_error/xlb', rr.Scalar(-x_bound))
-    # rr.log('absolute_translation_error/xub', rr.Scalar(x_bound))
+    rr.log('absolute_translation_error/x', rr.Scalars(abs_T_error.t[0]))
+    rr.log('absolute_translation_error/xlb', rr.Scalars(-x_bound))
+    rr.log('absolute_translation_error/xub', rr.Scalars(x_bound))
     
-    # rr.log('absolute_translation_error/y', rr.Scalar(abs_T_error.t[1]))
-    # rr.log('absolute_translation_error/ylb', rr.Scalar(-y_bound))
-    # rr.log('absolute_translation_error/yub', rr.Scalar(y_bound))
+    rr.log('absolute_translation_error/y', rr.Scalars(abs_T_error.t[1]))
+    rr.log('absolute_translation_error/ylb', rr.Scalars(-y_bound))
+    rr.log('absolute_translation_error/yub', rr.Scalars(y_bound))
     
-    # rr.log('absolute_translation_error/z', rr.Scalar(abs_T_error.t[2]))
-    # rr.log('absolute_translation_error/zlb', rr.Scalar(-z_bound))
-    # rr.log('absolute_translation_error/zub', rr.Scalar(+z_bound))
+    rr.log('absolute_translation_error/z', rr.Scalars(abs_T_error.t[2]))
+    rr.log('absolute_translation_error/zlb', rr.Scalars(-z_bound))
+    rr.log('absolute_translation_error/zub', rr.Scalars(+z_bound))
     
-    # rr.log('absolute_orientation_error/roll', rr.Scalar(R2euler(abs_T_error.R)[0]))
-    # rr.log('absolute_orientation_error/rolllb', rr.Scalar(-roll_bound))
-    # rr.log('absolute_orientation_error/rollub', rr.Scalar(roll_bound))
+    rr.log('absolute_orientation_error/roll', rr.Scalars(R2euler(abs_T_error.R)[0]))
+    rr.log('absolute_orientation_error/rolllb', rr.Scalars(-roll_bound))
+    rr.log('absolute_orientation_error/rollub', rr.Scalars(roll_bound))
     
-    # rr.log('absolute_orientation_error/pitch', rr.Scalar(R2euler(abs_T_error.R)[1]))
-    # rr.log('absolute_orientation_error/pitchlb', rr.Scalar(-pitch_bound))
-    # rr.log('absolute_orientation_error/pitchub', rr.Scalar(pitch_bound))
+    rr.log('absolute_orientation_error/pitch', rr.Scalars(R2euler(abs_T_error.R)[1]))
+    rr.log('absolute_orientation_error/pitchlb', rr.Scalars(-pitch_bound))
+    rr.log('absolute_orientation_error/pitchub', rr.Scalars(pitch_bound))
     
-    # rr.log('absolute_orientation_error/yaw', rr.Scalar(R2euler(abs_T_error.R)[2]))
-    # rr.log('absolute_orientation_error/yawlb', rr.Scalar(-yaw_bound))
-    # rr.log('absolute_orientation_error/yawub', rr.Scalar(yaw_bound))
+    rr.log('absolute_orientation_error/yaw', rr.Scalars(R2euler(abs_T_error.R)[2]))
+    rr.log('absolute_orientation_error/yawlb', rr.Scalars(-yaw_bound))
+    rr.log('absolute_orientation_error/yawub', rr.Scalars(yaw_bound))
 
-    # rr.log('msckf/features', rr.Scalar(len(msckf.features)))
-    # rr.log('msckf/camera_states', rr.Scalar(len(msckf.state.cameras)))
+    rr.log('msckf/features', rr.Scalars(len(msckf.features)))
+    rr.log('msckf/camera_states', rr.Scalars(len(msckf.state.cameras)))
 
     T_W_I0_gt = T_W_I1_gt
     T_W_I0_est = T_W_I1_est
