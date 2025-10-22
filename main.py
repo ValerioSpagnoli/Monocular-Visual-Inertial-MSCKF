@@ -207,7 +207,7 @@ msckf_parameters = MSCKFParameters(
     max_number_of_camera_states=30
 )
 
-msckf = MSCKF(parameters=msckf_parameters, rr=None)
+msckf = MSCKF(parameters=msckf_parameters, rr=rr)
 
 
 #** Metrics
