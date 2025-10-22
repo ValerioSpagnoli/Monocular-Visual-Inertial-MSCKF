@@ -38,10 +38,12 @@ git clone --recursive git@github.com:ValerioSpagnoli/Monocular-Visual-Inertial-M
 ```
 
 ## Installation 
-This project uses Pixi as the package manager and virtual environment manager. To install the dependencies:
+This project uses [Pixi](https://pixi.sh/latest/) as the package manager and virtual environment manager. To install the dependencies:
 ```bash
 pixi install
 ```
+
+Note: to install Pixi run `curl -fsSL https://pixi.sh/install.sh | bash`
 
 ## Datasets
 The datasets must be downloaded into the `data/` folder. The project has been tested using synthetic and photorealistic datasets from [TartanAir](https://theairlab.org/tartanair-dataset/) and [Pering Laboratory](https://peringlab.org/lmdata/), but it can be run with any sequence of RGB images and ground truth trajectory data (needed to generate synthetic IMU data).  
