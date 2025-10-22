@@ -2,6 +2,7 @@ import sys
 sys.path.append('../../')
 
 import os
+import argparse
 import numpy as np
 import pandas as pd
 import rerun as rr
@@ -22,13 +23,50 @@ from dataset.tools.dataset_generators.photorealistic_generator import Photoreali
 
 np.random.seed(42)
 
+#** Parse command-line arguments
+# ========================================================================================== #
+# Arguments
+# source: Dataset source (synthetic, peringlab, tartanair)
+# sequence: Sequence name (P001, ...)
+# max_frames: Maximum number of frames to process
+# noise_level: Noise level for data generation (low, mid, high)
+# save_results: Save results to disk
+# log_images: Log images to rerun
+
+parser_args = argparse.ArgumentParser(description='Run MSCKF VIO on dataset')
+parser_args.add_argument('--source', type=str, default='tartanair', 
+                        choices=['synthetic', 'peringlab', 'tartanair'],
+                        help='Dataset source')
+parser_args.add_argument('--sequence', type=str, default='P001',
+                        help='Sequence name')
+parser_args.add_argument('--max_frames', type=int, default=500,
+                        help='Maximum number of frames to process')
+parser_args.add_argument('--noise_level', type=str, default='mid',
+                        choices=['low', 'mid', 'high'],
+                        help='Noise level for data generation')
+parser_args.add_argument('--save_results', action='store_true',
+                        help='Save results to disk')
+parser_args.add_argument('--log_images', action='store_true',
+                        help='Log images to rerun')
+args = parser_args.parse_args()
+
 BASE_DATASET_PATH = './data'
-source = 'tartanair' # ['synthetic', 'peringlab', 'tartanair']
-sequence = 'P001'  
-max_frames = 500
-noise_level = 'mid' # ['low', 'mid', 'high']
+source = args.source
+sequence = args.sequence
+max_frames = args.max_frames
+noise_level = args.noise_level
+save_results = args.save_results
+log_images = args.log_images
 
 print(f'Running VIO on {source} dataset, sequence {sequence} with {noise_level} noise level')
+print(f'Parameters:')
+print(f'  - source: {source}')
+print(f'  - sequence: {sequence}')
+print(f'  - max_frames: {max_frames}')
+print(f'  - noise_level: {noise_level}')
+print(f'  - save_results: {save_results}')
+print(f'  - log_images: {log_images}')
+
 
 camera_info = pd.read_csv(f'{BASE_DATASET_PATH}/{source}/camera_info.csv')
 T_W_C = Isometry3D(np.array([[0,0,1], [-1,0,0], [0,-1,0]]),  np.zeros(3))
@@ -39,20 +77,23 @@ K = np.array([[camera_info.iloc[0]['fx'], 0, camera_info.iloc[0]['px']],
 width = camera_info.iloc[0]['w']
 height = camera_info.iloc[0]['h']
 
-save_results = False
 experiment_folder = f'{BASE_DATASET_PATH}/{source}/{sequence}/{noise_level}_noise'
 if save_results:
     if not os.path.exists(experiment_folder):
         os.makedirs(experiment_folder)
         
 
-
 #** Rerun setup
 # ========================================================================================== #
 
-log_images = True
-rr.init('vio', spawn=True)
-if save_results: rr.save(f'{experiment_folder}/recording.rrd')
+if save_results:
+    # When saving, we need to initialize without spawning first, then save, then spawn
+    rr.init('vio')
+    rr.save(f'{experiment_folder}/recording.rrd')
+    rr.spawn()  # Spawn viewer after setting up save
+else:
+    # When not saving, just spawn directly
+    rr.init('vio', spawn=True)
 
 rr.log('relative_translation_error/t', rr.SeriesLines(names='Relative Translation Error VIO', colors=[0, 0, 255]), static=True)
 rr.log('relative_orientation_error/r', rr.SeriesLines(names='Relative Orientation Error VIO', colors=[0, 0, 255]), static=True)
@@ -351,7 +392,8 @@ for i in tqdm(range(max_frames)):
     
     #** Logging
     # .......................................................................................... #    
-    rr.set_time_sequence('frame', i)
+    # rr.set_time_sequence('frame', i)
+    rr.set_time(timeline='frame', sequence=i)
 
     rr.log('world/gt_trajectory_point', rr.Points3D(gt_positions, colors=[[0, 200, 0]], radii=rr_trajectory_radii))
     rr.log('world/estimated_trajectory', rr.Points3D(estimated_positions, colors=[[0, 0, 255]], radii=rr_trajectory_radii))

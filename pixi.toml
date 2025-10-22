@@ -34,25 +34,11 @@ PYTHONPATH = "${PIXI_PROJECT_ROOT}:${PIXI_PROJECT_ROOT}/src:${PYTHONPATH}"
 
 [tasks]
 # Verification tasks
-verify = "python -c 'import numpy; import pandas; import scipy; import cv2; import torch; import matplotlib; import plotly; import optuna; import rerun as rr; import tqdm; print(\"✓ All core dependencies available\")'"
+verify-installation = "python -c 'import numpy; import pandas; import scipy; import cv2; import torch; import matplotlib; import plotly; import optuna; import rerun as rr; import tqdm; print(\"✓ All core dependencies available\")'"
 test-imports = "python -c 'import sys; sys.path.insert(0, \"src\"); from msckf.MSCKF import MSCKF; from msckf.Camera import Camera; from msckf.IMU import IMU; from msckf.FeatureExtractor import FeatureExtractor; from utils.geometry import Isometry3D; from utils.visualization_utils import Canvas3D; print(\"✓ All project modules imported successfully\")'"
 
 # Main experiment scripts
-test = "python msckf_test.py"
-montecarlo = "python msckf_montecarlo_test.py"
-optimize = "python msckf_optimizer.py"
-
-# Dataset generation
-gen-synthetic = "python dataset/tools/dataset_generators/synthetic_generator.py"
-gen-photorealistic = "python dataset/tools/dataset_generators/photorealistic_generator.py"
-
-# Utility tasks
-clean = "find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true; find . -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true"
-list = "pixi list"
-tree = "pixi tree"
-
-# Setup task
-setup = { cmd = "echo 'Environment ready! Run pixi run verify to test.'", depends-on = ["verify"] }
+main = "python main.py"
 
 [environments]
 default = { solve-group = "default" }
