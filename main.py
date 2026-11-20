@@ -31,6 +31,7 @@ np.random.seed(42)
 # noise_level: Noise level for data generation (low, mid, high); ignored for euroc, which has real IMU data
 # save_results: Save results to disk
 # device: Torch device for XFeat (auto, cpu, mps, cuda)
+# no_viewer: Do not stream to Rerun
 
 parser_args = argparse.ArgumentParser(description='Run MSCKF VIO on dataset')
 parser_args.add_argument('--source', type=str, default='tartanair', 
@@ -45,6 +46,8 @@ parser_args.add_argument('--noise_level', type=str, default='mid',
                         help='Noise level for data generation')
 parser_args.add_argument('--save_results', action='store_true',
                         help='Save results to disk')
+parser_args.add_argument('--no_viewer', action='store_true',
+                        help='Do not stream to Rerun (faster, for evaluations)')
 parser_args.add_argument('--device', type=str, default='auto',
                         choices=['auto', 'cpu', 'mps', 'cuda'],
                         help='Torch device for XFeat feature extraction')
@@ -57,6 +60,7 @@ max_frames = args.max_frames
 noise_level = args.noise_level if args.source != 'euroc' else 'real'
 save_results = args.save_results
 device = args.device
+no_viewer = args.no_viewer
 
 print(f'Running VIO on {source} dataset, sequence {sequence} with {noise_level} noise level')
 print(f'Parameters:')
@@ -66,6 +70,7 @@ print(f'  - max_frames: {max_frames}')
 print(f'  - noise_level: {noise_level}')
 print(f'  - save_results: {save_results}')
 print(f'  - device: {device}')
+print(f'  - no_viewer: {no_viewer}')
 
 
 if source == 'euroc':
@@ -203,7 +208,7 @@ msckf = MSCKF(parameters=msckf_parameters, rr=rr)
 # ========================================================================================== #
 T_I_C = T_W_C if source == 'euroc' else msckf.state.imu.T_W_I.inv() * T_W_C # camera pose in the IMU frame
 visualizer = RerunVisualizer(K=K, width=width, height=height, T_I_C=T_I_C,
-                             save_path=f'{experiment_folder}/recording.rrd' if save_results else None)
+                             save_path=f'{experiment_folder}/recording.rrd' if save_results else None, enabled=not no_viewer)
 
 
 #** Metrics
@@ -331,7 +336,6 @@ for i in tqdm(range(max_frames)):
             msckf.feature_callback(image)     
         
     
-    time.sleep(0.005)
     end_loop = time.time()
     delta_time = end_loop - start_loop
     loop_time.append(delta_time)
@@ -495,13 +499,18 @@ str_results += f'   - Std:            {std_roe} - {std_roe*100} %\n'
 str_results += f' - RMSE %:\n'   
 str_results += f'   - Position:       {rmse_position}\n'
 str_results += f'   - Orientation:    {rmse_orientation}\n'
+str_results += f' - ATE (evaluated over {evaluated_steps} steps, {traveled_distance:.2f} m):\n'
+str_results += f'   - Position RMSE:  {np.sqrt(ate_squared_sum / max(evaluated_steps, 1)):.4f} m\n'
+str_results += f'   - Orient. RMSE:   {np.rad2deg(np.sqrt(aoe_squared_sum / max(evaluated_steps, 1))):.3f} deg\n'
+str_results += f'   - Inside 3σ:      {100 * inside_3sigma / max(evaluated_steps, 1):.1f} % of steps\n'
 str_results += f' - Profiling:\n'
 str_results += f'   - Mean:           {mean_loop_time} s - {mean_loop_frequency} Hz\n'
 str_results += f'   - With Camera:    {mean_loop_time_with_camera} s - {mean_loop_frequency_with_camera} Hz\n'
 str_results += f'   - Without Camera: {mean_loop_time_without_camera} s - {mean_loop_frequency_without_camera} Hz\n'
 
 print(str_results)
-with open(f'{experiment_folder}/results.txt', 'w') as f: f.write(str_results)
+if save_results:
+    with open(f'{experiment_folder}/results.txt', 'w') as f: f.write(str_results)
 
 #** Plot
 fix, ax = plt.subplots(2, 1, figsize=(6.6, 6), dpi=500, sharex='col')

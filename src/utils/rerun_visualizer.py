@@ -55,16 +55,20 @@ class RerunVisualizer:
     """
 
     def __init__(self, K: np.ndarray, width: int, height: int, T_I_C: Isometry3D,
-                 save_path: Optional[str] = None, track_length: int = 10, history_every: int = 5, jpeg_quality: int = 75, max_landmark_distance: float = 30.0):
+                 save_path: Optional[str] = None, track_length: int = 10, history_every: int = 5, jpeg_quality: int = 75, max_landmark_distance: float = 30.0,
+                 enabled: bool = True):
         self.track_length = track_length
         self.history_every = history_every
         self.jpeg_quality = jpeg_quality
         self.max_landmark_distance = max_landmark_distance
         self.frame_count = 0
+        self.enabled = enabled
 
         self.est_trajectory: List[np.ndarray] = []
         self.gt_trajectory: List[np.ndarray] = []
 
+        if not self.enabled: return
+        
         rr.init('vio')
         if save_path is not None:
             # Stream to the viewer and to the .rrd file at the same time (save/spawn alone would replace each other's sink)
@@ -83,17 +87,20 @@ class RerunVisualizer:
                                   image_plane_distance=0.4, color=COLOR_EST), static=True)
 
     def set_time(self, step: int, timestamp: float):
+        if not self.enabled: return
         rr.set_time('step', sequence=step)
         rr.set_time('time', duration=timestamp)
 
     def log_pose(self, T_W_I_est: Isometry3D, T_W_I_gt: Optional[Isometry3D]):
         """Called at every IMU step."""
+        if not self.enabled: return
         rr.log('world/est/body', rr.Transform3D(translation=T_W_I_est.t, mat3x3=T_W_I_est.R))
         if T_W_I_gt is not None:
             rr.log('world/gt/body', rr.Transform3D(translation=T_W_I_gt.t, mat3x3=T_W_I_gt.R))
 
     def log_frame(self, msckf, image: np.ndarray, T_W_I_est: Isometry3D, T_W_I_gt: Optional[Isometry3D]):
         """Called after each image has been processed by the filter."""
+        if not self.enabled: return
         self.frame_count += 1
         self.est_trajectory.append(T_W_I_est.t.copy())
         if T_W_I_gt is not None: self.gt_trajectory.append(T_W_I_gt.t.copy())
@@ -104,6 +111,7 @@ class RerunVisualizer:
         if self.frame_count % self.history_every == 0: self._log_history(msckf)
 
     def log_text(self, metrics_markdown: str, status_markdown: str):
+        if not self.enabled: return
         rr.log(METRICS, rr.TextDocument(metrics_markdown, media_type=rr.MediaType.MARKDOWN))
         rr.log(STATUS, rr.TextDocument(status_markdown, media_type=rr.MediaType.MARKDOWN))
 

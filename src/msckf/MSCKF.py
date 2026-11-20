@@ -632,22 +632,21 @@ class MSCKF:
         state_covariance = (I - K @ T_H) @ self.state.covariance @ (I - K @ T_H).T + K @ R_n @ K.T
         self.state.covariance = (state_covariance + state_covariance.T) / 2      
 
-        delta_theta = delta_x[:3].flatten()                # Rotation correction from estimated IMU frame to true IMU frame (Theta_Ii_estIi) 
+        delta_theta = delta_x[:3].flatten()                # Local orientation error: R_W_Ii = R_W_estIi @ exp(delta_theta)
         delta_gyroscope_bias = delta_x[3:6].flatten()      # Gyroscope bias correction
         delta_velocity = delta_x[6:9].flatten()            # Velocity correction (IMU velocity)
         delta_accelerometer_bias = delta_x[9:12].flatten() # Accelerometer bias correction
         delta_position = delta_x[12:15].flatten()          # Position correction (IMU position)
 
-        # delta_theta represents a small angle rotation vector from the estimated current IMU (estIi) frame to the true IMU frame (Ii)
-        # The computation of the rotation matrix R_Ii_estiIi is done by the exponential map of delta_theta
-        # The update of the current estimate of the IMU rotation is: R_W_Ii = R_W_estIi * R_Ii_estIi.T
+        # delta_theta is the local orientation error (JPL convention used to derive F, H and J):
+        # R_W_Ii = R_W_estIi @ exp(delta_theta), i.e. R_estIi_Ii = exp(delta_theta) rotates the estimated IMU frame into the true one
         dThetaIMU_skew = skew(delta_theta)
         dThetaIMU_norm = np.linalg.norm(delta_theta)
-        if np.isclose(dThetaIMU_norm, 0): R_Ii_estIi = np.eye(3)
-        else: R_Ii_estIi = np.eye(3) + (np.sin(dThetaIMU_norm) / dThetaIMU_norm) * dThetaIMU_skew + ((1 - np.cos(dThetaIMU_norm)) / dThetaIMU_norm**2) * (dThetaIMU_skew @ dThetaIMU_skew)
+        if np.isclose(dThetaIMU_norm, 0): R_estIi_Ii = np.eye(3)
+        else: R_estIi_Ii = np.eye(3) + (np.sin(dThetaIMU_norm) / dThetaIMU_norm) * dThetaIMU_skew + ((1 - np.cos(dThetaIMU_norm)) / dThetaIMU_norm**2) * (dThetaIMU_skew @ dThetaIMU_skew)
         
         R_W_estIi = self.state.imu.T_W_Ii.R
-        R_W_Ii = R_W_estIi @ R_Ii_estIi.T
+        R_W_Ii = R_W_estIi @ R_estIi_Ii
         
         U, _, Vt = np.linalg.svd(R_W_Ii)
         R_W_Ii = U @ Vt
@@ -667,11 +666,11 @@ class MSCKF:
             # Correct camera
             dThetaCam_skew = skew(delta_camera_theta)
             dThetaCam_norm = np.linalg.norm(delta_camera_theta)
-            if np.isclose(dThetaCam_norm, 0): R_Ci_estCi = np.eye(3)
-            else: R_Ci_estCi = np.eye(3) + (np.sin(dThetaCam_norm) / dThetaCam_norm) * dThetaCam_skew + ((1 - np.cos(dThetaCam_norm)) / dThetaCam_norm**2) * (dThetaCam_skew @ dThetaCam_skew)
+            if np.isclose(dThetaCam_norm, 0): R_estCi_Ci = np.eye(3)
+            else: R_estCi_Ci = np.eye(3) + (np.sin(dThetaCam_norm) / dThetaCam_norm) * dThetaCam_skew + ((1 - np.cos(dThetaCam_norm)) / dThetaCam_norm**2) * (dThetaCam_skew @ dThetaCam_skew)
             
             R_W_estCi = camera.T_W_Ci.R
-            R_W_Ci = R_W_estCi @ R_Ci_estCi.T
+            R_W_Ci = R_W_estCi @ R_estCi_Ci
             
             U, _, Vt = np.linalg.svd(R_W_Ci)
             R_W_Ci = U @ Vt

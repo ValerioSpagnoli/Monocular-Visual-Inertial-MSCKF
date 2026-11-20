@@ -28,6 +28,7 @@ pytorch = ">=2.0"
 # Optimization and utilities
 optuna = ">=3.0"
 tqdm = "*"
+pytest = ">=8.0"
 
 [target.linux-64.dependencies]
 # CPU-only PyTorch build on Linux
@@ -42,6 +43,9 @@ PYTORCH_ENABLE_MPS_FALLBACK = "1"
 # Verification tasks
 verify-installation = "python -c 'import numpy; import pandas; import scipy; import cv2; import torch; import matplotlib; import plotly; import optuna; import rerun as rr; import tqdm; print(\"✓ All core dependencies available\")'"
 test-imports = "python -c 'from msckf.MSCKF import MSCKF; from msckf.Camera import Camera; from msckf.IMU import IMU; from msckf.FeatureExtractor import FeatureExtractor; from utils.geometry import Isometry3D; from utils.visualization_utils import Canvas3D; print(\"✓ All project modules imported successfully\")'"
+
+# Tests
+test = "pytest -q tests"
 
 # Main experiment scripts
 main = "python main.py"
