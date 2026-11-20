@@ -26,9 +26,15 @@ Le fasi vanno svolte **in ordine**: ogni fase produce una baseline misurabile ch
 - [x] Sostituire l'hack `sys.path.insert` in `FeatureExtractor.py` e `sys.path.append('../../')` in `main.py` con import puliti: `src/accelerated_features` è aggiunto al `PYTHONPATH` di Pixi. Rimosso anche `sys.path.append('../')` da `synthetic_generator.py`.
 
 ### 1.3 Dataset e prima esecuzione
-- [ ] Scaricare una sequenza TartanAir piccola (es. `P001`) in `data/tartanair/` con il relativo `camera_info.csv`.
-- [ ] Verificare che Rerun (`rr.spawn()`) apra il viewer su macOS.
-- [ ] Eseguire `pixi run main --source tartanair --sequence P001 --max_frames 500 --noise_level mid --save_results`.
+- [x] Scaricare una sequenza TartanAir piccola in `data/tartanair/` con il relativo `camera_info.csv`.
+  - Usata `abandonedfactory/Easy/P001`: 434 immagini `image_left` + `pose_left.txt`, presi da `image_left.zip` (7 GB) del server AirLab leggendo via HTTP range solo i file di P001 (164 MB).
+  - A `trajectory.csv` è stata aggiunta l'intestazione `x y z qx qy qz qw`: il generatore usa `read_csv` con header e altrimenti perde la prima posa.
+- [x] Verificare che Rerun (`rr.spawn()`) apra il viewer su macOS.
+  - Rerun 0.43: `Transform3D(axis_length=...)` non esiste più → `TransformAxes3D` statico. Versione fissata a `>=0.43,<0.44`.
+  - `rr.save()` + `rr.spawn()` si sostituivano a vicenda (il `.rrd` restava vuoto) → `rr.set_sinks(GrpcSink, FileSink)`.
+- [x] Eseguire `pixi run main --source tartanair --sequence P001 --max_frames 4000 --noise_level mid --save_results` (≈3900 passi IMU = sequenza intera, 73 s).
+  - ⚠️ **Risultato non comparabile con la tesi:** RTE medio 57% (picco ≈ passo 2950), ROE 0,56%, ATE fino a ~10 m e fuori dai bound 3σ. Sui primi 300 passi invece RTE è 0,35%.
+  - [ ] Capire la causa prima di fissare la baseline: differenze nei dati (es. header di `trajectory.csv`), versioni delle librerie, seed, o i bug già noti della Fase 2.
 
 ### 1.4 Baseline di riferimento (prima di toccare l'algoritmo)
 - [ ] Salvare `results.txt`, i plot e i parametri usati come **baseline v0** (es. in `benchmarks/baseline_v0/`), per almeno 2 sequenze × 3 livelli di rumore.

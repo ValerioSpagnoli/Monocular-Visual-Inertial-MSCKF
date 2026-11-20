@@ -16,7 +16,7 @@ scipy = ">=1.10"
 # Visualization
 matplotlib = ">=3.7"
 plotly = ">=5.0"
-rerun-sdk = ">=0.15"
+rerun-sdk = ">=0.43,<0.44"  # the logging API changes between minor releases
 
 # Computer vision
 opencv = ">=4.8"

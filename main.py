@@ -90,10 +90,10 @@ if save_results:
 # ========================================================================================== #
 
 if save_results:
-    # When saving, we need to initialize without spawning first, then save, then spawn
+    # Stream to the viewer and to the .rrd file at the same time (save/spawn alone would replace each other's sink)
     rr.init('vio')
-    rr.save(f'{experiment_folder}/recording.rrd')
-    rr.spawn()  # Spawn viewer after setting up save
+    rr.spawn(connect=False)
+    rr.set_sinks(rr.GrpcSink(), rr.FileSink(f'{experiment_folder}/recording.rrd'))
 else:
     # When not saving, just spawn directly
     rr.init('vio', spawn=True)
@@ -134,6 +134,9 @@ rr.log('msckf/NEES/compare_upper', rr.SeriesLines(names='Chi Square(1 - 0.05/2, 
 rr_trajectory_radii = 0.01
 rr_point_radii = 0.01
 rr_axis_length = 0.2
+
+rr.log('/world/camera_gt', rr.TransformAxes3D(rr_axis_length), static=True)
+rr.log('/world/camera_vio', rr.TransformAxes3D(rr_axis_length), static=True)
 
 
 #** Noise parameters
@@ -398,13 +401,12 @@ for i in tqdm(range(max_frames)):
     
     #** Logging
     # .......................................................................................... #    
-    # rr.set_time_sequence('frame', i)
     rr.set_time(timeline='frame', sequence=i)
 
     rr.log('world/gt_trajectory_point', rr.Points3D(gt_positions, colors=[[0, 200, 0]], radii=rr_trajectory_radii))
     rr.log('world/estimated_trajectory', rr.Points3D(estimated_positions, colors=[[0, 0, 255]], radii=rr_trajectory_radii))
-    rr.log('/world/camera_gt', rr.Transform3D(translation=T_W_I1_gt.t, mat3x3=T_W_I1_gt.R, axis_length=rr_axis_length))
-    rr.log('/world/camera_vio', rr.Transform3D(translation=T_W_I1_est.t, mat3x3=T_W_I1_est.R, axis_length=rr_axis_length)) 
+    rr.log('/world/camera_gt', rr.Transform3D(translation=T_W_I1_gt.t, mat3x3=T_W_I1_gt.R))
+    rr.log('/world/camera_vio', rr.Transform3D(translation=T_W_I1_est.t, mat3x3=T_W_I1_est.R)) 
     rr.log('world/estimated_world_points', rr.Points3D(msckf.estimated_world_points, colors=[200, 200, 0], radii=rr_point_radii))
     rr.log('world/current_processed_world_points', rr.Points3D(msckf.currently_processed_world_points, colors=[[200, 0, 150]], radii=rr_point_radii + 0.01))
     rr.log('world/imu_position_covariance', rr.Ellipsoids3D(centers=[T_W_I1_gt.t], half_sizes=[3*sigmas_position], colors=[[255, 0, 0]], fill_mode=3))
