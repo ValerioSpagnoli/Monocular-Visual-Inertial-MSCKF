@@ -1,10 +1,10 @@
-[project]
+[workspace]
 name = "monocular-visual-inertial-msckf"
 version = "0.1.0"
 description = "Multi-State Constraint Kalman Filter for Monocular Visual-Inertial Navigation"
 authors = ["Valerio Spagnoli"]
-channels = ["conda-forge", "pytorch"]
-platforms = ["linux-64"]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64"]
 
 [dependencies]
 # Core scientific computing
@@ -21,13 +21,16 @@ rerun-sdk = ">=0.15"
 # Computer vision
 opencv = ">=4.8"
 
-# Deep learning (for XFeat) - using cpuonly variant
+# Deep learning (for XFeat)
 pytorch = ">=2.0"
-cpuonly = "*"
 
 # Optimization and utilities
 optuna = ">=3.0"
 tqdm = "*"
+
+[target.linux-64.dependencies]
+# CPU-only PyTorch build on Linux
+pytorch-cpu = ">=2.0"
 
 [activation.env]
 PYTHONPATH = "${PIXI_PROJECT_ROOT}:${PIXI_PROJECT_ROOT}/src:${PYTHONPATH}"

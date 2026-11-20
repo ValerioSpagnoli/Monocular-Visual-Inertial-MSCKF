@@ -11,11 +11,12 @@ Le fasi vanno svolte **in ordine**: ogni fase produce una baseline misurabile ch
 ## Fase 1 — Porting su macOS (Apple Silicon, `osx-arm64`)
 
 ### 1.1 Ambiente Pixi
-- [ ] Aggiungere `osx-arm64` a `platforms` in `pixi.toml` (mantenere `linux-64`).
-- [ ] Rimuovere il canale `pytorch` (deprecato) e prendere `pytorch` da `conda-forge`.
-- [ ] Spostare `cpuonly` in una sezione `[target.linux-64.dependencies]` (non esiste su macOS).
-- [ ] Rigenerare `pixi.lock` con `pixi install` e verificare che risolva su entrambe le piattaforme.
-- [ ] Eseguire `pixi run verify-installation` e `pixi run test-imports`.
+- [x] Aggiungere `osx-arm64` a `platforms` in `pixi.toml` (mantenere `linux-64`).
+- [x] Rimuovere il canale `pytorch` (deprecato) e prendere `pytorch` da `conda-forge`.
+- [x] Sostituire `cpuonly` con `pytorch-cpu` in `[target.linux-64.dependencies]` (`cpuonly` non esiste su macOS). Su macOS la build è `cpu_generic`, con MPS disponibile.
+- [x] Rinominare `[project]` in `[workspace]` (deprecato in Pixi 0.84).
+- [x] Rigenerare `pixi.lock` con `pixi install` e verificare che risolva su entrambe le piattaforme.
+- [x] Eseguire `pixi run verify-installation` e `pixi run test-imports`.
 
 ### 1.2 Submodule e XFeat
 - [ ] Verificare che `src/accelerated_features` sia inizializzato (`git submodule update --init`) e che i pesi in `weights/` siano presenti (Git LFS?).
