@@ -112,15 +112,26 @@ pixi run main
 ```
 
 The script accepts the following command-line parameters:
-- `--source`: The name of the folder that identifies the source dataset (e.g., `tartanair`, `peringlab`)
-- `--sequence`: The name of the folder that identifies the sequence on which the experiment will be performed (e.g., `P001`, `ME007`)
+- `--source`: The name of the folder that identifies the source dataset (`tartanair`, `peringlab`, `synthetic`, `euroc`)
+- `--sequence`: The name of the folder that identifies the sequence on which the experiment will be performed (e.g., `P001`, `ME007`, `V1_01_easy`)
 - `--max_frames`: Maximum number of frames to process (integer, e.g., `1000`)
 - `--noise_level`: The noise level of the generated IMU data (choices: `low`, `mid`, `high`)
 - `--save_results`: Flag to save the results to the `<noise_level>` folder (no value needed)
-- `--log_images`: Flag to log images to Rerun (no value needed)
 - `--device`: Torch device used by XFeat (choices: `auto`, `cpu`, `mps`, `cuda`; default `auto` picks CUDA, then Apple GPU (MPS), then CPU)
 
 Example usage:
 ```bash
-pixi run main --source tartanair --sequence P001 --max_frames 1000 --noise_level high --save_results --log_images
+pixi run main --source tartanair --sequence P001 --max_frames 1000 --noise_level high --save_results
+pixi run main --source euroc --sequence V1_01_easy --max_frames 30000 --save_results
 ```
+
+### EuRoC MAV
+Download the ASL-format sequences from the [ETH Research Collection](https://www.research-collection.ethz.ch/entities/researchdata/bcaf173e-5dac-484b-bc37-faf97a594f1f) and extract them as `data/euroc/<sequence>/mav0/` (only `cam0`, `imu0` and `state_groundtruth_estimate0` are needed). IMU data is real, so `--noise_level` is ignored; calibration and IMU noise are read from the `sensor.yaml` files and the results are saved to `data/euroc/<sequence>/results/`.
+
+## Visualization
+The run is streamed to a [Rerun](https://rerun.io) viewer with a predefined layout:
+- **Map**: estimated (blue) and ground-truth (green) trajectories, current body poses, camera frustum with the live image, sliding window of camera clones, triangulated landmarks (grey; those used in the current update in orange) and the 3σ position uncertainty.
+- **Camera**: undistorted image with features and their tracks. Colors: orange = used in the EKF update, green = tracked, light blue = new, magenta = discarded by the χ² gating test, red = match discarded by the epipolar/homography test.
+- **Metrics** and **Filter status**: running ATE/RTE/ROE, consistency w.r.t. the 3σ bounds, feature counts, estimated IMU biases and loop rate.
+
+With `--save_results` the same stream is also written to `recording.rrd`, which can be reopened with `pixi run rerun <path>/recording.rrd`.

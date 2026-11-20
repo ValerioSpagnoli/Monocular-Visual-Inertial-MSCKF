@@ -140,6 +140,12 @@ class MSCKF:
         self.current_image = None
         self.stacked_image = None   
         self.composed_image = None
+        
+        #* Diagnostics for visualization (reset at every image)
+        self.rejected_keypoints: List[Tuple[np.ndarray, str]] = [] # matches discarded by the 'epipolar' or 'homography' test
+        self.updated_feature_indices: List[int] = []               # features whose residual entered the EKF update
+        self.gated_feature_indices: List[int] = []                 # features discarded by the chi-square gating test
+        self.triangulated_points: Dict[int, np.ndarray] = {}       # feature index -> last triangulated world point
 
     
     def imu_callback(self, imu_measurement: IMUMeasurement): 
@@ -156,6 +162,7 @@ class MSCKF:
         
     def feature_callback(self, image: cv2.Mat, extracted_features: ExtractedFeature = None):    
         self.current_image = image #! DEBUG    
+        self.rejected_keypoints, self.updated_feature_indices, self.gated_feature_indices = [], [], []
         if not self.first_measurement_arrived: self.first_measurement_arrived = True
         if not self.state.imu.is_initialized: return
 
@@ -370,6 +377,7 @@ class MSCKF:
                         if score > self.homography_rejection_threshold: 
                             epipolar_test_passed = False
                             self.number_of_features_discarder_for_homography_test += 1
+                            self.rejected_keypoints.append((matched_keypoint, 'homography'))
                             debug_keypoints.append([int(matched_keypoint[0] + self.width), int(matched_keypoint[1])])
                             debug_keypoints_colors.append([0, 0, 255])
                             debug_keypoints_radius.append(5)
@@ -391,6 +399,7 @@ class MSCKF:
                         if score > self.epipolar_rejection_threshold:
                             epipolar_test_passed = False
                             self.number_of_features_discarded_for_epipolar_test += 1
+                            self.rejected_keypoints.append((matched_keypoint, 'epipolar'))
                             debug_keypoints.append([int(matched_keypoint[0] + self.width), int(matched_keypoint[1])])   
                             debug_keypoints_colors.append([255, 0, 0])
                             debug_keypoints_radius.append(5)
@@ -452,10 +461,7 @@ class MSCKF:
             self.last_camera_measurement.features_indices = np.array(self.last_camera_measurement.features_indices)
             self.last_camera_measurement.keypoints = current_camera_measurement.keypoints
             self.last_camera_measurement.scores = current_camera_measurement.scores
-            
-            if self.rr is not None:
-                rr.log('/camera_image/strips', rr.LineStrips2D(debug_lines, radii=[0.5]*len(debug_lines), colors=debug_lines_colors))
-                rr.log('/camera_image/keypoints', rr.Points2D(debug_keypoints, radii=debug_keypoints_radius, colors=debug_keypoints_colors))
+
                
     def process_features(self):     
         self.currently_processed_world_points = [] #! DEBUG
@@ -498,6 +504,7 @@ class MSCKF:
                     feature.inverse_depth_point.update(depth, W_v)
                     self.estimated_world_points.append(W_p_hat) #! DEBUG
                     self.currently_processed_world_points.append(W_p_hat) #! DEBUG
+                    self.triangulated_points[index] = W_p_hat
                     
                 valid_features[index] = feature
                 if lost: lost_features[index] = feature
@@ -586,8 +593,10 @@ class MSCKF:
             passed = self.gating_test(rj_o, Hj_o)
             if not passed: 
                 self.number_of_residuals_discarded_for_gasting_test += 1
+                self.gated_feature_indices.append(index)
                 continue
-                        
+            
+            self.updated_feature_indices.append(index)
             H_X_list.append(Hj_o)
             r_o_list.append(rj_o)
         

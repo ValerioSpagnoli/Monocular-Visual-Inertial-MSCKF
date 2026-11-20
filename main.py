@@ -12,6 +12,7 @@ import time
 
 from src.utils.geometry import *
 from src.utils.visualization_utils import *
+from src.utils.rerun_visualizer import RerunVisualizer
 from src.msckf.IMU import *
 from src.msckf.MSCKF import *
 from src.msckf.Camera import *
@@ -29,7 +30,6 @@ np.random.seed(42)
 # max_frames: Maximum number of frames to process
 # noise_level: Noise level for data generation (low, mid, high); ignored for euroc, which has real IMU data
 # save_results: Save results to disk
-# log_images: Log images to rerun
 # device: Torch device for XFeat (auto, cpu, mps, cuda)
 
 parser_args = argparse.ArgumentParser(description='Run MSCKF VIO on dataset')
@@ -45,8 +45,6 @@ parser_args.add_argument('--noise_level', type=str, default='mid',
                         help='Noise level for data generation')
 parser_args.add_argument('--save_results', action='store_true',
                         help='Save results to disk')
-parser_args.add_argument('--log_images', action='store_true',
-                        help='Log images to rerun')
 parser_args.add_argument('--device', type=str, default='auto',
                         choices=['auto', 'cpu', 'mps', 'cuda'],
                         help='Torch device for XFeat feature extraction')
@@ -58,7 +56,6 @@ sequence = args.sequence
 max_frames = args.max_frames
 noise_level = args.noise_level if args.source != 'euroc' else 'real'
 save_results = args.save_results
-log_images = args.log_images
 device = args.device
 
 print(f'Running VIO on {source} dataset, sequence {sequence} with {noise_level} noise level')
@@ -68,7 +65,6 @@ print(f'  - sequence: {sequence}')
 print(f'  - max_frames: {max_frames}')
 print(f'  - noise_level: {noise_level}')
 print(f'  - save_results: {save_results}')
-print(f'  - log_images: {log_images}')
 print(f'  - device: {device}')
 
 
@@ -95,59 +91,6 @@ if save_results:
     if not os.path.exists(experiment_folder):
         os.makedirs(experiment_folder)
         
-
-#** Rerun setup
-# ========================================================================================== #
-
-if save_results:
-    # Stream to the viewer and to the .rrd file at the same time (save/spawn alone would replace each other's sink)
-    rr.init('vio')
-    rr.spawn(connect=False)
-    rr.set_sinks(rr.GrpcSink(), rr.FileSink(f'{experiment_folder}/recording.rrd'))
-else:
-    # When not saving, just spawn directly
-    rr.init('vio', spawn=True)
-
-rr.log('relative_translation_error/t', rr.SeriesLines(names='Relative Translation Error VIO', colors=[0, 0, 255]), static=True)
-rr.log('relative_orientation_error/r', rr.SeriesLines(names='Relative Orientation Error VIO', colors=[0, 0, 255]), static=True)
-
-rr.log('absolute_translation_error/x', rr.SeriesLines(names='Absolute Translation Error x', colors=[255, 0, 0]), static=True)
-rr.log('absolute_translation_error/xlb', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
-rr.log('absolute_translation_error/xub', rr.SeriesLines(names='upper bound', colors=[200, 150, 0]), static=True)
-
-rr.log('absolute_translation_error/y', rr.SeriesLines(names='Absolute Translation Error y', colors=[0, 255, 0]), static=True)
-rr.log('absolute_translation_error/ylb', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
-rr.log('absolute_translation_error/yub', rr.SeriesLines(names='upper bound', colors=[200, 150, 0]), static=True)
-
-rr.log('absolute_translation_error/z', rr.SeriesLines(names='Absolute Translation Error z', colors=[0, 0, 255]), static=True)
-rr.log('absolute_translation_error/zlb', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
-rr.log('absolute_translation_error/zub', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
-
-rr.log('absolute_orientation_error/roll', rr.SeriesLines(names='Absolute Orientation Error roll', colors=[255, 0, 0]), static=True)
-rr.log('absolute_orientation_error/rolllb', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
-rr.log('absolute_orientation_error/rollub', rr.SeriesLines(names='upper bound', colors=[200, 150, 0]), static=True)
-
-rr.log('absolute_orientation_error/pitch', rr.SeriesLines(names='Absolute Orientation Error pitch', colors=[0, 255, 0]), static=True)
-rr.log('absolute_orientation_error/pitchlb', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
-rr.log('absolute_orientation_error/pitchub', rr.SeriesLines(names='upper bound', colors=[200, 150, 0]), static=True)
-
-rr.log('absolute_orientation_error/yaw', rr.SeriesLines(names='Absolute Orientation Error yaw', colors=[0, 0, 255]), static=True)
-rr.log('absolute_orientation_error/yawlb', rr.SeriesLines(names='lower bound', colors=[200, 150, 0]), static=True)
-rr.log('absolute_orientation_error/yawub', rr.SeriesLines(names='upper bound', colors=[200, 150, 0]), static=True)
-
-rr.log('msckf/features', rr.SeriesLines(names='Number of Features', colors=[200, 150, 0]), static=True)
-rr.log('msckf/camera_states', rr.SeriesLines(names='Number of Camera States', colors=[200, 150, 0]), static=True)
-rr.log('msckf/NEES/metric', rr.SeriesLines(names='NEES', colors=[200, 150, 0]), static=True)
-rr.log('msckf/NEES/compare_lower', rr.SeriesLines(names='Chi Square(0.05/2, 6)', colors=[200, 0, 0]), static=True)
-rr.log('msckf/NEES/compare_upper', rr.SeriesLines(names='Chi Square(1 - 0.05/2, 6)', colors=[0, 200, 0]), static=True)
-
-rr_trajectory_radii = 0.01
-rr_point_radii = 0.01
-rr_axis_length = 0.2
-
-rr.log('/world/camera_gt', rr.TransformAxes3D(rr_axis_length), static=True)
-rr.log('/world/camera_vio', rr.TransformAxes3D(rr_axis_length), static=True)
-
 
 #** Noise parameters
 # ========================================================================================== #
@@ -256,6 +199,13 @@ msckf_parameters = MSCKFParameters(
 msckf = MSCKF(parameters=msckf_parameters, rr=rr)
 
 
+#** Rerun
+# ========================================================================================== #
+T_I_C = T_W_C if source == 'euroc' else msckf.state.imu.T_W_I.inv() * T_W_C # camera pose in the IMU frame
+visualizer = RerunVisualizer(K=K, width=width, height=height, T_I_C=T_I_C,
+                             save_path=f'{experiment_folder}/recording.rrd' if save_results else None)
+
+
 #** Metrics
 # ========================================================================================== #
 
@@ -287,11 +237,41 @@ aoe_yaw_bounds = []
 relative_RMSE_position = []
 relative_RMSE_orientation = [] 
 
+#* Running metrics shown in Rerun
+ate_squared_sum = 0.0      # squared absolute position error [m^2]
+aoe_squared_sum = 0.0      # squared absolute orientation error [rad^2]
+inside_3sigma = 0          # steps with the position error inside the 3-sigma bounds on all axes
+evaluated_steps = 0
+traveled_distance = 0.0    # ground-truth path length [m]
+
 #* Profiling
 loop_time = []
 loop_time_with_camera = []
 loop_time_without_camera = []
 
+
+def status_markdown(msckf: MSCKF, timestamp: float, loop_time: list) -> str:
+    current_camera_id = msckf.state.imu.id
+    visible = [f for f in msckf.features.values() if len(f.camera_indices) > 0 and f.camera_indices[-1] == current_camera_id]
+    tracked = sum(1 for f in visible if len(f.keypoints) > 1)
+    epipolar = sum(1 for _, reason in msckf.rejected_keypoints if reason == 'epipolar')
+    homography = len(msckf.rejected_keypoints) - epipolar
+    bg, ba = msckf.state.imu.gyroscope_bias, msckf.state.imu.accelerometer_bias
+    return f'''
+| Filter | Value |
+|---|---|
+| Time | {timestamp:.2f} s |
+| Features in image (tracked / new) | {len(visible)} ({tracked} / {len(visible) - tracked}) |
+| Features in the filter | {len(msckf.features)} |
+| Rejected matches (epipolar / homography) | {epipolar} / {homography} |
+| Features in last update (used / gated) | {len(msckf.updated_feature_indices)} / {len(msckf.gated_feature_indices)} |
+| Camera states in window | {len(msckf.state.cameras)} |
+| Gyroscope bias | [{bg[0]:+.4f}, {bg[1]:+.4f}, {bg[2]:+.4f}] rad/s |
+| Accelerometer bias | [{ba[0]:+.3f}, {ba[1]:+.3f}, {ba[2]:+.3f}] m/s² |
+| Mean loop rate | {1 / np.mean(loop_time):.1f} Hz |
+
+**Image legend:** orange = used in update, green = tracked, light blue = new, magenta = gated, red = rejected match
+'''
 
 #** Initialize the test
 # ========================================================================================== #
@@ -350,10 +330,6 @@ for i in tqdm(range(max_frames)):
             if source == 'euroc': image = euroc.undistort(image)
             msckf.feature_callback(image)     
         
-        if log_images: 
-            rerun_image = msckf.composed_image if msckf.composed_image is not None else msckf.current_image
-            compressed_image = cv2.resize(rerun_image, (640*2, 480), interpolation=cv2.INTER_AREA)
-            rr.log('/camera_image', rr.Image(compressed_image, color_model='bgr'))      
     
     time.sleep(0.005)
     end_loop = time.time()
@@ -371,8 +347,11 @@ for i in tqdm(range(max_frames)):
     #* Ground truth
     gt_transform = gt_trajectory.iloc[i]
     if gt_transform.isna().any(): # no ground truth for this sample: only log the estimate
-        rr.set_time(timeline='frame', sequence=i)
-        rr.log('/world/camera_vio', rr.Transform3D(translation=T_W_I1_est.t, mat3x3=T_W_I1_est.R))
+        visualizer.set_time(i, imu_timestamp)
+        visualizer.log_pose(T_W_I1_est, None)
+        if is_there_camera_measurement: 
+            visualizer.log_frame(msckf, image, T_W_I1_est, None)
+            visualizer.log_text('*Waiting for ground truth...*', status_markdown(msckf, imu_timestamp, loop_time))
         T_W_I0_est = T_W_I1_est
         continue
     
@@ -457,48 +436,37 @@ for i in tqdm(range(max_frames)):
     aoe_yaw_bounds.append(yaw_bound)
     
     
+    #* Running metrics
+    evaluated_steps += 1
+    ate_squared_sum += np.sum(abs_T_error.t**2)
+    aoe_squared_sum += np.arccos(np.clip((np.trace(abs_T_error.R) - 1) / 2.0, -1.0, 1.0))**2
+    inside_3sigma += int(np.all(np.abs(abs_T_error.t) <= 3*sigmas_position))
+    traveled_distance += relative_translation_gt
+    
     #** Logging
     # .......................................................................................... #    
-    rr.set_time(timeline='frame', sequence=i)
-
-    rr.log('world/gt_trajectory_point', rr.Points3D(gt_positions, colors=[[0, 200, 0]], radii=rr_trajectory_radii))
-    rr.log('world/estimated_trajectory', rr.Points3D(estimated_positions, colors=[[0, 0, 255]], radii=rr_trajectory_radii))
-    rr.log('/world/camera_gt', rr.Transform3D(translation=T_W_I1_gt.t, mat3x3=T_W_I1_gt.R))
-    rr.log('/world/camera_vio', rr.Transform3D(translation=T_W_I1_est.t, mat3x3=T_W_I1_est.R)) 
-    rr.log('world/estimated_world_points', rr.Points3D(msckf.estimated_world_points, colors=[200, 200, 0], radii=rr_point_radii))
-    rr.log('world/current_processed_world_points', rr.Points3D(msckf.currently_processed_world_points, colors=[[200, 0, 150]], radii=rr_point_radii + 0.01))
-    rr.log('world/imu_position_covariance', rr.Ellipsoids3D(centers=[T_W_I1_gt.t], half_sizes=[3*sigmas_position], colors=[[255, 0, 0]], fill_mode=3))
+    visualizer.set_time(i, imu_timestamp)
+    visualizer.log_pose(T_W_I1_est, T_W_I1_gt)
+    if is_there_camera_measurement:
+        visualizer.log_frame(msckf, image, T_W_I1_est, T_W_I1_gt)
         
-    rr.log('relative_translation_error/t', rr.Scalars(rte_smoothed))
-    rr.log('relative_orientation_error/r', rr.Scalars(roe_smoothed))
+        ate_rmse = np.sqrt(ate_squared_sum / evaluated_steps)
+        metrics = f'''
+| Metric | Value |
+|---|---|
+| ATE position RMSE | {ate_rmse:.3f} m |
+| ATE position (current) | {np.linalg.norm(abs_T_error.t):.3f} m |
+| ATE orientation RMSE | {np.rad2deg(np.sqrt(aoe_squared_sum / evaluated_steps)):.2f} deg |
+| Drift (ATE RMSE / distance) | {100 * ate_rmse / max(traveled_distance, 1e-9):.2f} % |
+| Distance traveled (gt) | {traveled_distance:.2f} m |
+| RTE mean | {100 * np.mean(rte_array):.2f} % |
+| ROE mean | {100 * np.mean(roe_array):.3f} % |
+| Position error inside 3σ | {100 * inside_3sigma / evaluated_steps:.1f} % of steps |
+| Current error x / y / z | {abs_T_error.t[0]:+.3f} / {abs_T_error.t[1]:+.3f} / {abs_T_error.t[2]:+.3f} m |
+| Current 3σ x / y / z | {x_bound:.3f} / {y_bound:.3f} / {z_bound:.3f} m |
+'''
+        visualizer.log_text(metrics, status_markdown(msckf, imu_timestamp, loop_time))
     
-    rr.log('absolute_translation_error/x', rr.Scalars(abs_T_error.t[0]))
-    rr.log('absolute_translation_error/xlb', rr.Scalars(-x_bound))
-    rr.log('absolute_translation_error/xub', rr.Scalars(x_bound))
-    
-    rr.log('absolute_translation_error/y', rr.Scalars(abs_T_error.t[1]))
-    rr.log('absolute_translation_error/ylb', rr.Scalars(-y_bound))
-    rr.log('absolute_translation_error/yub', rr.Scalars(y_bound))
-    
-    rr.log('absolute_translation_error/z', rr.Scalars(abs_T_error.t[2]))
-    rr.log('absolute_translation_error/zlb', rr.Scalars(-z_bound))
-    rr.log('absolute_translation_error/zub', rr.Scalars(+z_bound))
-    
-    rr.log('absolute_orientation_error/roll', rr.Scalars(R2euler(abs_T_error.R)[0]))
-    rr.log('absolute_orientation_error/rolllb', rr.Scalars(-roll_bound))
-    rr.log('absolute_orientation_error/rollub', rr.Scalars(roll_bound))
-    
-    rr.log('absolute_orientation_error/pitch', rr.Scalars(R2euler(abs_T_error.R)[1]))
-    rr.log('absolute_orientation_error/pitchlb', rr.Scalars(-pitch_bound))
-    rr.log('absolute_orientation_error/pitchub', rr.Scalars(pitch_bound))
-    
-    rr.log('absolute_orientation_error/yaw', rr.Scalars(R2euler(abs_T_error.R)[2]))
-    rr.log('absolute_orientation_error/yawlb', rr.Scalars(-yaw_bound))
-    rr.log('absolute_orientation_error/yawub', rr.Scalars(yaw_bound))
-
-    rr.log('msckf/features', rr.Scalars(len(msckf.features)))
-    rr.log('msckf/camera_states', rr.Scalars(len(msckf.state.cameras)))
-
     T_W_I0_gt = T_W_I1_gt
     T_W_I0_est = T_W_I1_est
     
