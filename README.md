@@ -38,7 +38,7 @@ git clone --recursive git@github.com:ValerioSpagnoli/Monocular-Visual-Inertial-M
 ```
 
 ## Installation 
-This project uses [Pixi](https://pixi.sh/latest/) as the package manager and virtual environment manager. To install the dependencies:
+This project uses [Pixi](https://pixi.sh/latest/) as the package manager and virtual environment manager. Supported platforms are Linux (`linux-64`) and macOS on Apple Silicon (`osx-arm64`). To install the dependencies:
 ```bash
 pixi install
 ```
@@ -118,6 +118,7 @@ The script accepts the following command-line parameters:
 - `--noise_level`: The noise level of the generated IMU data (choices: `low`, `mid`, `high`)
 - `--save_results`: Flag to save the results to the `<noise_level>` folder (no value needed)
 - `--log_images`: Flag to log images to Rerun (no value needed)
+- `--device`: Torch device used by XFeat (choices: `auto`, `cpu`, `mps`, `cuda`; default `auto` picks CUDA, then Apple GPU (MPS), then CPU)
 
 Example usage:
 ```bash

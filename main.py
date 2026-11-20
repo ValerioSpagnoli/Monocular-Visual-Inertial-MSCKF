@@ -1,6 +1,3 @@
-import sys
-sys.path.append('../../')
-
 import os
 import argparse
 import numpy as np
@@ -32,6 +29,7 @@ np.random.seed(42)
 # noise_level: Noise level for data generation (low, mid, high)
 # save_results: Save results to disk
 # log_images: Log images to rerun
+# device: Torch device for XFeat (auto, cpu, mps, cuda)
 
 parser_args = argparse.ArgumentParser(description='Run MSCKF VIO on dataset')
 parser_args.add_argument('--source', type=str, default='tartanair', 
@@ -48,6 +46,9 @@ parser_args.add_argument('--save_results', action='store_true',
                         help='Save results to disk')
 parser_args.add_argument('--log_images', action='store_true',
                         help='Log images to rerun')
+parser_args.add_argument('--device', type=str, default='auto',
+                        choices=['auto', 'cpu', 'mps', 'cuda'],
+                        help='Torch device for XFeat feature extraction')
 args = parser_args.parse_args()
 
 BASE_DATASET_PATH = './data'
@@ -57,6 +58,7 @@ max_frames = args.max_frames
 noise_level = args.noise_level
 save_results = args.save_results
 log_images = args.log_images
+device = args.device
 
 print(f'Running VIO on {source} dataset, sequence {sequence} with {noise_level} noise level')
 print(f'Parameters:')
@@ -66,6 +68,7 @@ print(f'  - max_frames: {max_frames}')
 print(f'  - noise_level: {noise_level}')
 print(f'  - save_results: {save_results}')
 print(f'  - log_images: {log_images}')
+print(f'  - device: {device}')
 
 
 camera_info = pd.read_csv(f'{BASE_DATASET_PATH}/{source}/camera_info.csv')
@@ -204,7 +207,10 @@ msckf_parameters = MSCKFParameters(
     homography_rejection_threshold=5,
     min_number_of_frames_to_be_tracked=4,
     min_number_of_frames_to_be_lost=2,
-    max_number_of_camera_states=30
+    max_number_of_camera_states=30,
+    
+    #* Feature extractor parameters
+    device=device
 )
 
 msckf = MSCKF(parameters=msckf_parameters, rr=rr)

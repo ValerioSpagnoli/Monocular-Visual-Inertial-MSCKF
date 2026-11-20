@@ -44,6 +44,9 @@ class MSCKFParameters:
     min_number_of_frames_to_be_tracked: int = 5
     max_number_of_camera_states: int = 30
     
+    #* Feature extractor parameters
+    device: str = 'auto'
+    
     def to_str(self):
         return  f'\n\
 T_W_C:\n{self.T_W_C.matrix()}\n\
@@ -65,7 +68,8 @@ epipolar_rejection_threshold: {self.epipolar_rejection_threshold}\n \
 homography_rejection_threshold: {self.homography_rejection_threshold}\n \
 min_number_of_frames_to_be_lost: {self.min_number_of_frames_to_be_lost}\n \
 min_number_of_frames_to_be_tracked: {self.min_number_of_frames_to_be_tracked}\n \
-max_number_of_camera_states: {self.max_number_of_camera_states}'
+max_number_of_camera_states: {self.max_number_of_camera_states}\n \
+device: {self.device}'
                             
     
 
@@ -105,7 +109,7 @@ class MSCKF:
                 
         #* Features
         self.features: Dict[int, Feature] = {} # index, feature
-        self.feature_extractor = FeatureExtractor()
+        self.feature_extractor = FeatureExtractor(device=parameters.device)
         self.last_feature_index = 0
         self.first_measurement_arrived = False
         self.last_camera_measurement = None

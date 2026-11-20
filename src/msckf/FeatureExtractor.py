@@ -1,8 +1,6 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Tuple
 
-import sys
-import os
 import cv2
 import torch
 import numpy as np
@@ -10,11 +8,7 @@ import numpy as np
 from src.msckf.Camera import Camera 
 from src.utils.geometry import *
 
-# Add the accelerated_features directory to sys.path so its internal imports work
-accelerated_features_path = os.path.join(os.path.dirname(__file__), '..', 'accelerated_features')
-if accelerated_features_path not in sys.path:
-    sys.path.insert(0, accelerated_features_path)
-
+# XFeat imports its internals as `modules.*`: src/accelerated_features must be on PYTHONPATH (set in pixi.toml)
 from modules.xfeat import XFeat
 
 @dataclass
@@ -43,9 +37,29 @@ class ExtractedFeature:
     descriptors: np.ndarray
     scores: np.ndarray
 
+def resolve_device(device: str = 'auto') -> torch.device:
+    """Return the requested torch device; 'auto' picks cuda, then mps, then cpu."""
+    if device == 'auto':
+        if torch.cuda.is_available(): return torch.device('cuda')
+        if torch.backends.mps.is_available(): return torch.device('mps')
+        return torch.device('cpu')
+    if device == 'cuda' and not torch.cuda.is_available():
+        print('CUDA not available, falling back to CPU')
+        return torch.device('cpu')
+    if device == 'mps' and not torch.backends.mps.is_available():
+        print('MPS not available, falling back to CPU')
+        return torch.device('cpu')
+    return torch.device(device)
+
 class FeatureExtractor():
-    def __init__(self):
+    def __init__(self, device: str = 'auto'):
         self.xfeat = XFeat()
+        
+        # XFeat always selects cuda/cpu by itself: override its device after loading the weights
+        self.device = resolve_device(device)
+        self.xfeat.dev = self.device
+        self.xfeat.net = self.xfeat.net.to(self.device)
+        print(f'XFeat running on: {self.device}')
         
     def extract_features(self, image: np.ndarray, top_k: int = 256) -> ExtractedFeature:
         output = self.xfeat.detectAndCompute(image, top_k=top_k)[0]

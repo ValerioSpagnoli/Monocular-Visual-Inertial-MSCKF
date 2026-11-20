@@ -19,9 +19,11 @@ Le fasi vanno svolte **in ordine**: ogni fase produce una baseline misurabile ch
 - [x] Eseguire `pixi run verify-installation` e `pixi run test-imports`.
 
 ### 1.2 Submodule e XFeat
-- [ ] Verificare che `src/accelerated_features` sia inizializzato (`git submodule update --init`) e che i pesi in `weights/` siano presenti (Git LFS?).
-- [ ] Controllare come XFeat sceglie il device (`cuda` → fallback `cpu`); valutare l'opzione `mps` (GPU Apple) in modo configurabile, con fallback su CPU.
-- [ ] Sostituire l'hack `sys.path.insert` in `FeatureExtractor.py` e `sys.path.append('../../')` in `main.py` con import puliti (il `PYTHONPATH` di Pixi è già impostato).
+- [x] Verificare che `src/accelerated_features` sia inizializzato (`git submodule update --init`) e che i pesi in `weights/` siano presenti. Sono versionati direttamente nel submodule, senza LFS.
+- [x] Controllare come XFeat sceglie il device (`cuda` → fallback `cpu`); valutare l'opzione `mps` (GPU Apple) in modo configurabile, con fallback su CPU.
+  - Aggiunti `--device {auto,cpu,mps,cuda}` e `MSCKFParameters.device`. `auto` sceglie cuda → mps → cpu; XFeat viene spostato sul device dopo il caricamento, senza modificare il submodule. È impostato anche `PYTORCH_ENABLE_MPS_FALLBACK=1`.
+  - Misura (M-series, 640×480, top_k=300): CPU 48 ms/frame, MPS 16 ms/frame. Keypoint identici, descrittori e score con differenze < 1e-6.
+- [x] Sostituire l'hack `sys.path.insert` in `FeatureExtractor.py` e `sys.path.append('../../')` in `main.py` con import puliti: `src/accelerated_features` è aggiunto al `PYTHONPATH` di Pixi. Rimosso anche `sys.path.append('../')` da `synthetic_generator.py`.
 
 ### 1.3 Dataset e prima esecuzione
 - [ ] Scaricare una sequenza TartanAir piccola (es. `P001`) in `data/tartanair/` con il relativo `camera_info.csv`.

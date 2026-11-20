@@ -33,12 +33,14 @@ tqdm = "*"
 pytorch-cpu = ">=2.0"
 
 [activation.env]
-PYTHONPATH = "${PIXI_PROJECT_ROOT}:${PIXI_PROJECT_ROOT}/src:${PYTHONPATH}"
+PYTHONPATH = "${PIXI_PROJECT_ROOT}:${PIXI_PROJECT_ROOT}/src:${PIXI_PROJECT_ROOT}/src/accelerated_features:${PYTHONPATH}"
+# Run on CPU the few ops not yet implemented for Apple GPUs
+PYTORCH_ENABLE_MPS_FALLBACK = "1"
 
 [tasks]
 # Verification tasks
 verify-installation = "python -c 'import numpy; import pandas; import scipy; import cv2; import torch; import matplotlib; import plotly; import optuna; import rerun as rr; import tqdm; print(\"✓ All core dependencies available\")'"
-test-imports = "python -c 'import sys; sys.path.insert(0, \"src\"); from msckf.MSCKF import MSCKF; from msckf.Camera import Camera; from msckf.IMU import IMU; from msckf.FeatureExtractor import FeatureExtractor; from utils.geometry import Isometry3D; from utils.visualization_utils import Canvas3D; print(\"✓ All project modules imported successfully\")'"
+test-imports = "python -c 'from msckf.MSCKF import MSCKF; from msckf.Camera import Camera; from msckf.IMU import IMU; from msckf.FeatureExtractor import FeatureExtractor; from utils.geometry import Isometry3D; from utils.visualization_utils import Canvas3D; print(\"✓ All project modules imported successfully\")'"
 
 # Main experiment scripts
 main = "python main.py"

@@ -1,6 +1,3 @@
-import sys
-sys.path.append('../')
-
 from dataclasses import dataclass, field
 from typing import List
 
