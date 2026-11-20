@@ -274,7 +274,7 @@ class MSCKF:
         #* Reshape covariance       
         J = np.zeros((6, self.state.covariance.shape[0]))
         J[:3, :3] = T_I_C.R.T
-        J[3:6,:3] = skew(self.state.imu.T_W_Ii.R @ T_I_C.t)
+        J[3:6,:3] = -self.state.imu.T_W_Ii.R @ skew(T_I_C.t) # p_W_C = p_W_I + R_W_I exp(δθ) t_I_C
         J[3:6, 12:15] = np.eye(3)
         M = np.vstack((np.eye(self.state.covariance.shape[0]), J))
 
