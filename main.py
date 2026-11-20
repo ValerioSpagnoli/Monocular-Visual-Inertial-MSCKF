@@ -250,6 +250,8 @@ relative_RMSE_orientation = []
 ate_squared_sum = 0.0      # squared absolute position error [m^2]
 aoe_squared_sum = 0.0      # squared absolute orientation error [rad^2]
 inside_3sigma = 0          # steps with the position error inside the 3-sigma bounds on all axes
+nees_position_sum = 0.0
+nees_orientation_sum = 0.0
 evaluated_steps = 0
 traveled_distance = 0.0    # ground-truth path length [m]
 
@@ -384,6 +386,10 @@ for i in tqdm(range(max_frames)):
     
     #* Absolute Pose Error
     abs_T_error = T_W_I1_gt.inv() * T_W_I1_est
+    # Errors in the frames of the filter covariance: position in the world frame, orientation as the local
+    # error δθ with R_W_I_true = R_W_I_est @ exp(δθ)
+    position_error = T_W_I1_est.t - T_W_I1_gt.t
+    orientation_error = R2axisAngle(T_W_I1_est.R.T @ T_W_I1_gt.R)
 
     IMU_position_covariance = msckf.state.covariance[12:15, 12:15]
     IMU_orientation_covariance = msckf.state.covariance[:3, :3]
@@ -430,25 +436,28 @@ for i in tqdm(range(max_frames)):
     rte_array.append(rte_smoothed)
     roe_array.append(roe_smoothed)
     
-    ate_x.append(abs_T_error.t[0])
+    ate_x.append(position_error[0])
     ate_x_bounds.append(x_bound)
-    ate_y.append(abs_T_error.t[1])
+    ate_y.append(position_error[1])
     ate_y_bounds.append(y_bound)
-    ate_z.append(abs_T_error.t[2])
+    ate_z.append(position_error[2])
     ate_z_bounds.append(z_bound)
-    aoe_roll.append(R2euler(abs_T_error.R)[0])
+    aoe_roll.append(orientation_error[0])
     aoe_roll_bounds.append(roll_bound)
-    aoe_pitch.append(R2euler(abs_T_error.R)[1])
+    aoe_pitch.append(orientation_error[1])
     aoe_pitch_bounds.append(pitch_bound)
-    aoe_yaw.append(R2euler(abs_T_error.R)[2])
+    aoe_yaw.append(orientation_error[2])
     aoe_yaw_bounds.append(yaw_bound)
     
     
     #* Running metrics
     evaluated_steps += 1
-    ate_squared_sum += np.sum(abs_T_error.t**2)
-    aoe_squared_sum += np.arccos(np.clip((np.trace(abs_T_error.R) - 1) / 2.0, -1.0, 1.0))**2
-    inside_3sigma += int(np.all(np.abs(abs_T_error.t) <= 3*sigmas_position))
+    ate_squared_sum += np.sum(position_error**2)
+    aoe_squared_sum += np.sum(orientation_error**2)
+    inside_3sigma += int(np.all(np.abs(position_error) <= 3*sigmas_position))
+    # Normalized Estimation Error Squared: about 3 on average (3 dof) for a consistent filter
+    nees_position_sum += position_error @ np.linalg.pinv(IMU_position_covariance) @ position_error
+    nees_orientation_sum += orientation_error @ np.linalg.pinv(IMU_orientation_covariance) @ orientation_error
     traveled_distance += relative_translation_gt
     
     #** Logging
@@ -463,14 +472,15 @@ for i in tqdm(range(max_frames)):
 | Metric | Value |
 |---|---|
 | ATE position RMSE | {ate_rmse:.3f} m |
-| ATE position (current) | {np.linalg.norm(abs_T_error.t):.3f} m |
+| ATE position (current) | {np.linalg.norm(position_error):.3f} m |
 | ATE orientation RMSE | {np.rad2deg(np.sqrt(aoe_squared_sum / evaluated_steps)):.2f} deg |
 | Drift (ATE RMSE / distance) | {100 * ate_rmse / max(traveled_distance, 1e-9):.2f} % |
 | Distance traveled (gt) | {traveled_distance:.2f} m |
 | RTE mean | {100 * np.mean(rte_array):.2f} % |
 | ROE mean | {100 * np.mean(roe_array):.3f} % |
 | Position error inside 3σ | {100 * inside_3sigma / evaluated_steps:.1f} % of steps |
-| Current error x / y / z | {abs_T_error.t[0]:+.3f} / {abs_T_error.t[1]:+.3f} / {abs_T_error.t[2]:+.3f} m |
+| Mean NEES position / orientation (consistent ≈ 3) | {nees_position_sum / evaluated_steps:.1f} / {nees_orientation_sum / evaluated_steps:.1f} |
+| Current error x / y / z (world) | {position_error[0]:+.3f} / {position_error[1]:+.3f} / {position_error[2]:+.3f} m |
 | Current 3σ x / y / z | {x_bound:.3f} / {y_bound:.3f} / {z_bound:.3f} m |
 '''
         visualizer.log_text(metrics, status_markdown(msckf, imu_timestamp, loop_time))
@@ -507,6 +517,7 @@ str_results += f' - ATE (evaluated over {evaluated_steps} steps, {traveled_dista
 str_results += f'   - Position RMSE:  {np.sqrt(ate_squared_sum / max(evaluated_steps, 1)):.4f} m\n'
 str_results += f'   - Orient. RMSE:   {np.rad2deg(np.sqrt(aoe_squared_sum / max(evaluated_steps, 1))):.3f} deg\n'
 str_results += f'   - Inside 3σ:      {100 * inside_3sigma / max(evaluated_steps, 1):.1f} % of steps\n'
+str_results += f'   - Mean NEES:      position {nees_position_sum / max(evaluated_steps, 1):.2f}, orientation {nees_orientation_sum / max(evaluated_steps, 1):.2f} (consistent ≈ 3)\n'
 str_results += f' - Rejections:\n'
 str_results += f'   - Epipolar:       {msckf.number_of_features_discarded_for_epipolar_test}\n'
 str_results += f'   - Homography:     {msckf.number_of_features_discarder_for_homography_test}\n'
