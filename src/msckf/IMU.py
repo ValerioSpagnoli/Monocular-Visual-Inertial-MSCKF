@@ -40,7 +40,7 @@ class IMU:
         
         self.is_initialized = False
         
-    def initialize(self, imu_measurements: List[IMUMeasurement]):
+    def initialize(self, imu_measurements: List[IMUMeasurement], estimate_gyroscope_bias: bool = False):
         self.is_initialized = True
         
         W_gravity = self.W_gravity / np.linalg.norm(self.W_gravity)
@@ -59,7 +59,8 @@ class IMU:
         
         self.T_W_Ii = Isometry3D(R_W_I, np.zeros(3))
         
-        # self.gyroscope_bias = mean_angular_velocity
+        # Valid only if the platform is static during the initialization window
+        if estimate_gyroscope_bias: self.gyroscope_bias = mean_angular_velocity
         # I_gravity = R_W_I.T @ self.W_gravity
         # self.accelerometer_bias = mean_linear_acceleration - I_gravity
 

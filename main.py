@@ -17,23 +17,24 @@ from src.msckf.MSCKF import *
 from src.msckf.Camera import *
 from dataset.tools import parser
 from dataset.tools.dataset_generators.photorealistic_generator import PhotorealisticGenerator
+from dataset.tools.dataset_generators.euroc_converter import EurocConverter
 
 np.random.seed(42)
 
 #** Parse command-line arguments
 # ========================================================================================== #
 # Arguments
-# source: Dataset source (synthetic, peringlab, tartanair)
-# sequence: Sequence name (P001, ...)
+# source: Dataset source (synthetic, peringlab, tartanair, euroc)
+# sequence: Sequence name (P001, V1_01_easy, ...)
 # max_frames: Maximum number of frames to process
-# noise_level: Noise level for data generation (low, mid, high)
+# noise_level: Noise level for data generation (low, mid, high); ignored for euroc, which has real IMU data
 # save_results: Save results to disk
 # log_images: Log images to rerun
 # device: Torch device for XFeat (auto, cpu, mps, cuda)
 
 parser_args = argparse.ArgumentParser(description='Run MSCKF VIO on dataset')
 parser_args.add_argument('--source', type=str, default='tartanair', 
-                        choices=['synthetic', 'peringlab', 'tartanair'],
+                        choices=['synthetic', 'peringlab', 'tartanair', 'euroc'],
                         help='Dataset source')
 parser_args.add_argument('--sequence', type=str, default='P001',
                         help='Sequence name')
@@ -55,7 +56,7 @@ BASE_DATASET_PATH = './data'
 source = args.source
 sequence = args.sequence
 max_frames = args.max_frames
-noise_level = args.noise_level
+noise_level = args.noise_level if args.source != 'euroc' else 'real'
 save_results = args.save_results
 log_images = args.log_images
 device = args.device
@@ -71,16 +72,25 @@ print(f'  - log_images: {log_images}')
 print(f'  - device: {device}')
 
 
-camera_info = pd.read_csv(f'{BASE_DATASET_PATH}/{source}/camera_info.csv')
-T_W_C = Isometry3D(np.array([[0,0,1], [-1,0,0], [0,-1,0]]),  np.zeros(3))
-K = np.array([[camera_info.iloc[0]['fx'], 0, camera_info.iloc[0]['px']],
-              [0, camera_info.iloc[0]['fy'], camera_info.iloc[0]['py']],
-              [0, 0, 1]])
+if source == 'euroc':
+    #* Real data: calibration from the dataset sensor.yaml files, images undistorted to the pinhole model K
+    euroc = EurocConverter(sequence=sequence)
+    T_W_C = euroc.T_I_C # camera pose in the IMU frame
+    K = euroc.K
+    width = euroc.width
+    height = euroc.height
+    
+else:
+    camera_info = pd.read_csv(f'{BASE_DATASET_PATH}/{source}/camera_info.csv')
+    T_W_C = Isometry3D(np.array([[0,0,1], [-1,0,0], [0,-1,0]]),  np.zeros(3))
+    K = np.array([[camera_info.iloc[0]['fx'], 0, camera_info.iloc[0]['px']],
+                  [0, camera_info.iloc[0]['fy'], camera_info.iloc[0]['py']],
+                  [0, 0, 1]])
 
-width = camera_info.iloc[0]['w']
-height = camera_info.iloc[0]['h']
+    width = camera_info.iloc[0]['w']
+    height = camera_info.iloc[0]['h']
 
-experiment_folder = f'{BASE_DATASET_PATH}/{source}/{sequence}/{noise_level}_noise'
+experiment_folder = f'{BASE_DATASET_PATH}/{source}/{sequence}/{noise_level}_noise' if source != 'euroc' else f'{BASE_DATASET_PATH}/{source}/{sequence}/results'
 if save_results:
     if not os.path.exists(experiment_folder):
         os.makedirs(experiment_folder)
@@ -164,10 +174,35 @@ elif noise_level == 'low':
     gyroscope_noise_density = gyroscope_noise_densities[2]
     accelerometer_random_walk = accelerometer_random_walks[2]
     gyroscope_random_walk = gyroscope_random_walks[2]
+    
+elif noise_level == 'real':
+    accelerometer_noise_density = euroc.accelerometer_noise_density
+    gyroscope_noise_density = euroc.gyroscope_noise_density
+    accelerometer_random_walk = euroc.accelerometer_random_walk
+    gyroscope_random_walk = euroc.gyroscope_random_walk
 
-#** Photorealistic generator
+#* Gravity convention: the generated datasets simulate an accelerometer measuring R^T (a + g),
+#* while a real accelerometer measures R^T (a - g). Flipping W_gravity makes the filter consistent with real data.
+W_gravity = np.array([0, 0, 9.81]) if source == 'euroc' else np.array([0, 0, -9.81])
+
+#* Real IMU biases are not zero: estimate the gyroscope bias at the (static) start and give the filter
+#* an initial uncertainty on the state, so the biases can be corrected by the visual updates
+estimate_initial_gyroscope_bias = source == 'euroc'
+if source == 'euroc':
+    initial_covariance_diagonal = np.concatenate([np.full(3, 0.01**2),   # δθ [rad]
+                                                  np.full(3, 0.005**2),  # δbg [rad/s]
+                                                  np.full(3, 0.01**2),   # δv [m/s]
+                                                  np.full(3, 0.2**2),    # δba [m/s^2]
+                                                  np.zeros(3)])          # δp [m] (the start defines the origin)
+else:
+    initial_covariance_diagonal = np.zeros(15)
+
+#** Photorealistic generator / EuRoC converter
 # ========================================================================================== #
-if source != 'synthetic':
+if source == 'euroc':
+    euroc.process_data()
+    
+elif source != 'synthetic':
     generator = PhotorealisticGenerator(source=source, sequence=sequence,
                                         accelerometer_noise_density=accelerometer_noise_density,
                                         gyroscope_noise_density=gyroscope_noise_density,
@@ -199,7 +234,9 @@ msckf_parameters = MSCKFParameters(
     gyroscope_noise_density=gyroscope_noise_density,
     accelerometer_random_walk=accelerometer_random_walk,
     gyroscope_random_walk=gyroscope_random_walk,
-    W_gravity=np.array([0, 0, -9.81]),
+    W_gravity=W_gravity,
+    estimate_initial_gyroscope_bias=estimate_initial_gyroscope_bias,
+    initial_covariance_diagonal=initial_covariance_diagonal,
     
     #* Feature parameters
     number_of_extracted_features=300,
@@ -262,6 +299,11 @@ last_camera_time_index = 1
 T_W_I0_gt = Isometry3D(np.eye(3), np.zeros(3))
 T_W_I0_est = Isometry3D(np.eye(3), np.zeros(3))
 
+#* Real datasets: ground truth lives in its own world frame (Vicon) and is not available for the first samples,
+#* so it is aligned to the estimate at the first sample where it exists
+align_gt = source == 'euroc'
+T_est_gt = None # transform from the ground-truth world frame to the estimator world frame
+
 relative_position_error_deque = deque(maxlen=10)
 relative_orientation_error_deque = deque(maxlen=10)
 
@@ -285,7 +327,8 @@ for i in tqdm(range(max_frames)):
     # .......................................................................................... #
     is_there_camera_measurement = False
     msckf.imu_callback(imu_measurement)
-    if np.abs(np.round(imu_timestamp - camera_timestamp, 3)) < 0.00001:
+    # Process the image once the IMU has been propagated up to its timestamp (real IMU and camera clocks never match exactly)
+    if imu_timestamp >= camera_timestamp - 1e-6:
         is_there_camera_measurement = True
         image_path = camera_images.iloc[last_camera_time_index]['image_path']
         last_camera_time_index += 1
@@ -303,7 +346,8 @@ for i in tqdm(range(max_frames)):
             msckf.feature_callback(image, camera_measurement)
         
         else:
-            image = cv2.imread(image_path)     
+            image = cv2.imread(image_path)
+            if source == 'euroc': image = euroc.undistort(image)
             msckf.feature_callback(image)     
         
         if log_images: 
@@ -321,20 +365,34 @@ for i in tqdm(range(max_frames)):
     #** Errors
     # .......................................................................................... #
                 
+    #* Estimate VIO
+    T_W_I1_est = msckf.state.imu.T_W_Ii
+    
     #* Ground truth
     gt_transform = gt_trajectory.iloc[i]
+    if gt_transform.isna().any(): # no ground truth for this sample: only log the estimate
+        rr.set_time(timeline='frame', sequence=i)
+        rr.log('/world/camera_vio', rr.Transform3D(translation=T_W_I1_est.t, mat3x3=T_W_I1_est.R))
+        T_W_I0_est = T_W_I1_est
+        continue
+    
     gt_position = np.array([gt_transform['T03'], gt_transform['T13'], gt_transform['T23']])
     gt_rotation = np.array([[gt_transform['T00'], gt_transform['T01'], gt_transform['T02']],
                             [gt_transform['T10'], gt_transform['T11'], gt_transform['T12']],
                             [gt_transform['T20'], gt_transform['T21'], gt_transform['T22']]])
     T_W_I1_gt = Isometry3D(gt_rotation, gt_position)
+    
+    if align_gt:
+        if T_est_gt is None:
+            T_est_gt = T_W_I1_est * T_W_I1_gt.inv()
+            T_W_I0_gt, T_W_I0_est = T_est_gt * T_W_I1_gt, T_W_I1_est
+        T_W_I1_gt = T_est_gt * T_W_I1_gt
+    
     T_I0_I1_gt = T_W_I0_gt.inv() * T_W_I1_gt
     
     relative_translation_gt = np.linalg.norm(T_I0_I1_gt.t)
     relative_orientation_gt = np.arccos(np.clip((np.trace(T_I0_I1_gt.R) - 1) / 2.0, -1.0, 1.0))
     
-    #* Estimate VIO
-    T_W_I1_est = msckf.state.imu.T_W_Ii
     T_I0_I1_est = T_W_I0_est.inv() * T_W_I1_est
     
     #* Absolute Pose Error

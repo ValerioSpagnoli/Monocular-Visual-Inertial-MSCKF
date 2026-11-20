@@ -32,6 +32,8 @@ class MSCKFParameters:
     gyroscope_noise_density: float = 0.0001
     gyroscope_random_walk: float = 0.000001
     W_gravity: np.ndarray = field(default_factory=lambda: np.array([0, 0, -9.81]))
+    estimate_initial_gyroscope_bias: bool = False # initial gyroscope bias = mean angular velocity before the first image (requires a static start)
+    initial_covariance_diagonal: np.ndarray = field(default_factory=lambda: np.zeros(15)) # [δθ, δbg, δv, δba, δp]
     
     #* Feature parameters
     number_of_extracted_features: int = 256
@@ -60,6 +62,8 @@ accelerometer_random_walk: {self.accelerometer_random_walk}\n \
 gyroscope_noise_density: {self.gyroscope_noise_density}\n \
 gyroscope_random_walk: {self.gyroscope_random_walk}\n \
 W_gravity: {self.W_gravity}\n \
+estimate_initial_gyroscope_bias: {self.estimate_initial_gyroscope_bias}\n \
+initial_covariance_diagonal: {self.initial_covariance_diagonal}\n \
 number_of_extracted_features: {self.number_of_extracted_features}\n \
 min_cosine_similarity: {self.min_cosine_similarity}\n \
 use_parallax: {self.use_parallax}\n \
@@ -98,6 +102,8 @@ class MSCKF:
         #* IMU
         self.only_imu = parameters.only_imu
         self.state.imu.W_gravity = parameters.W_gravity
+        self.estimate_initial_gyroscope_bias = parameters.estimate_initial_gyroscope_bias
+        self.state.covariance = np.diag(np.asarray(parameters.initial_covariance_diagonal, dtype=float))
         
         self.imu_measuremenets_buffer: List[IMUMeasurement] = []
         self.continuous_noise_covariance = np.eye(12)
@@ -142,7 +148,7 @@ class MSCKF:
             return
 
         if not self.state.imu.is_initialized:        
-            self.state.imu.initialize(imu_measurements=self.imu_measuremenets_buffer)
+            self.state.imu.initialize(imu_measurements=self.imu_measuremenets_buffer, estimate_gyroscope_bias=self.estimate_initial_gyroscope_bias)
             for imu_meas in self.imu_measuremenets_buffer:
                 self.process_imu(imu_meas)
         

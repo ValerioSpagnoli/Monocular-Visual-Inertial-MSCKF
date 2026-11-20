@@ -40,6 +40,21 @@ Le fasi vanno svolte **in ordine**: ogni fase produce una baseline misurabile ch
   - **PeringLab Deer Running (`deer_run`), Deer VR Slow (`deer_vr_slow`)**: disponibili su `https://www.doc.ic.ac.uk/~wl208/lmdata/` (zip 272 MB e 1,1 GB, pose `.gt` già nel formato `peringlab`). Il server blocca le richieste parallele (403): scaricare con una sola richiesta.
   - Servono anche gli intrinseci PeringLab per `camera_info.csv`.
 
+### 1.3b Dataset reale: EuRoC MAV (scelto come riferimento al posto dei dataset della tesi)
+- [x] Scaricare `vicon_room1.zip` da [ETH Research Collection](https://www.research-collection.ethz.ch/entities/researchdata/bcaf173e-5dac-484b-bc37-faf97a594f1f) e estrarre `V1_01_easy`, `V1_02_medium`, `V1_03_difficult` (solo `cam0`, `imu0`, `vicon0`, ground truth) in `data/euroc/<seq>/mav0/`.
+- [x] `EurocConverter` (`dataset/tools/dataset_generators/euroc_converter.py`): IMU reale (niente generazione), timestamp relativi in secondi, ground truth ricampionato sui timestamp IMU (NaN dove manca), calibrazione da `sensor.yaml`. Le immagini vengono undistorte con `cv2.remap` → il filtro resta pinhole con la nuova K.
+- [x] `main.py --source euroc`:
+  - estrinseci camera-IMU reali (con traslazione);
+  - parametri di rumore dall'IMU;
+  - sincronizzazione con `imu_ts >= cam_ts` invece dell'uguaglianza dei timestamp arrotondati;
+  - ground truth allineato alla stima alla prima posa disponibile;
+  - risultati in `data/euroc/<seq>/results/`.
+- [x] **Convenzione del segno della gravità:** i dataset generati simulano un accelerometro che misura Rᵀ(a + g), mentre quello reale misura Rᵀ(a − g). Per EuRoC si usa `W_gravity = +9.81 z`. ⚠️ Da uniformare nella Fase 2: generatore e integrazione vanno portati alla convenzione fisica.
+- [x] Bias reali: nuovi parametri `estimate_initial_gyroscope_bias` (media del giroscopio prima del primo frame, richiede una partenza statica) e `initial_covariance_diagonal` (prima la covarianza iniziale era nulla e il filtro non poteva stimare i bias). Default invariati per i dati sintetici.
+- Risultato su V1_01_easy (primi 3000 passi IMU = 15 s):
+  - senza le correzioni sui bias: yaw in deriva a 0,077 rad/s, pari al bias del giroscopio z;
+  - con le correzioni: consistente (dentro i 3σ) fino al passo ~1550, poi salti a gradino di roll e pitch negli update visivi → divergenza (ATE z ~20 m). È il punto di partenza della Fase 2.
+
 ### 1.4 Baseline di riferimento (prima di toccare l'algoritmo)
 - [ ] Salvare `results.txt`, i plot e i parametri usati come **baseline v0** (es. in `benchmarks/baseline_v0/`), per almeno 2 sequenze × 3 livelli di rumore.
 - [ ] Fissare i seed (`np.random.seed`, `torch.manual_seed`) per avere run riproducibili.
