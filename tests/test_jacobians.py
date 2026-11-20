@@ -189,3 +189,21 @@ def test_observability_constrained_transition():
     np.testing.assert_allclose(Phi[0:3, 0:3], numerical[0:3, 0:3], atol=1e-6, err_msg='δθ <- δθ')
     np.testing.assert_allclose(Phi[6:9, 0:3], numerical[3:6, 0:3], atol=1e-3, err_msg='δv <- δθ')
     np.testing.assert_allclose(Phi[12:15, 0:3], numerical[6:9, 0:3], atol=1e-4, err_msg='δp <- δθ')
+
+
+def test_correction_keeps_null_states():
+    """The first-estimate (null) states of the observability constraint must not be modified by MSCKF.correct()."""
+    T_W_I, T_W_C = random_pose(), random_pose()
+    camera = Camera(K=K, width=640, height=480, T_W_Ci=Isometry3D(T_W_C.R.copy(), T_W_C.t.copy()))
+    msckf = fake_msckf(Isometry3D(T_W_I.R.copy(), T_W_I.t.copy()), T_W_C, np.eye(21), cameras={0: camera})
+    imu = msckf.state.imu
+    imu.v_W_Ii = rng.normal(size=3)
+    imu.T_W_Ii_null, imu.v_W_Ii_null = imu.T_W_Ii, imu.v_W_Ii # as set at the end of MSCKF.process_imu
+    
+    MSCKF.correct(msckf, np.zeros((21, 1)), np.zeros((1, 21)), np.zeros((1, 1)), rng.normal(scale=0.01, size=(21, 1)))
+    
+    np.testing.assert_array_equal(imu.T_W_Ii_null.R, T_W_I.R)
+    np.testing.assert_array_equal(imu.T_W_Ii_null.t, T_W_I.t)
+    np.testing.assert_array_equal(camera.T_W_Ci_null.R, T_W_C.R)
+    np.testing.assert_array_equal(camera.T_W_Ci_null.t, T_W_C.t)
+    assert not np.allclose(imu.v_W_Ii_null, imu.v_W_Ii)

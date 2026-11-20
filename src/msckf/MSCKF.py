@@ -663,12 +663,12 @@ class MSCKF:
         
         U, _, Vt = np.linalg.svd(R_W_Ii)
         R_W_Ii = U @ Vt
-        self.state.imu.T_W_Ii.R = R_W_Ii
-                
-        self.state.imu.T_W_Ii.t += delta_position
-        self.state.imu.v_W_Ii += delta_velocity
-        self.state.imu.gyroscope_bias += delta_gyroscope_bias
-        self.state.imu.accelerometer_bias += delta_accelerometer_bias
+        # New objects, not in-place updates: the null (first-estimate) states used by the observability
+        # constraint reference the previous ones and must not be corrected
+        self.state.imu.T_W_Ii = Isometry3D(R_W_Ii, self.state.imu.T_W_Ii.t + delta_position)
+        self.state.imu.v_W_Ii = self.state.imu.v_W_Ii + delta_velocity
+        self.state.imu.gyroscope_bias = self.state.imu.gyroscope_bias + delta_gyroscope_bias
+        self.state.imu.accelerometer_bias = self.state.imu.accelerometer_bias + delta_accelerometer_bias
 
         # Correct all camera poses
         for i, (camera_id, camera) in enumerate(self.state.cameras.items()):
@@ -688,8 +688,7 @@ class MSCKF:
             U, _, Vt = np.linalg.svd(R_W_Ci)
             R_W_Ci = U @ Vt
             
-            camera.T_W_Ci.R = R_W_Ci
-            camera.T_W_Ci.t += delta_camera_position
+            camera.T_W_Ci = Isometry3D(R_W_Ci, camera.T_W_Ci.t + delta_camera_position)
             
     def prune_camera_states(self):        
         camera_states_to_process: Dict[int, Camera] = {}
