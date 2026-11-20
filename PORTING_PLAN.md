@@ -35,6 +35,10 @@ Le fasi vanno svolte **in ordine**: ogni fase produce una baseline misurabile ch
 - [x] Eseguire `pixi run main --source tartanair --sequence P001 --max_frames 4000 --noise_level mid --save_results` (≈3900 passi IMU = sequenza intera, 73 s).
   - ⚠️ **Risultato non comparabile con la tesi:** RTE medio 57% (picco ≈ passo 2950), ROE 0,56%, ATE fino a ~10 m e fuori dai bound 3σ. Sui primi 300 passi invece RTE è 0,35%.
   - [ ] Capire la causa prima di fissare la baseline: differenze nei dati (es. header di `trajectory.csv`), versioni delle librerie, seed, o i bug già noti della Fase 2.
+- [ ] Riprodurre i dataset della tesi (Cap. 7.3: primi 2500 frame di ogni sequenza, IMU a 200 Hz). P001 **non** è tra questi.
+  - **TartanAir ME005, ME007**: sono il test set monoculare della CVPR SLAM Challenge, non il training set. Immagini: `tartanair-test-mono-release.tar.gz` (7,65 GB, Google Drive; il server `airlab-share:8081` non risponde). Ground truth: il link Box del README restituisce 404 e il mirror Hugging Face ufficiale ha solo il training → servono copie locali o un contatto con gli autori.
+  - **PeringLab Deer Running (`deer_run`), Deer VR Slow (`deer_vr_slow`)**: disponibili su `https://www.doc.ic.ac.uk/~wl208/lmdata/` (zip 272 MB e 1,1 GB, pose `.gt` già nel formato `peringlab`). Il server blocca le richieste parallele (403): scaricare con una sola richiesta.
+  - Servono anche gli intrinseci PeringLab per `camera_info.csv`.
 
 ### 1.4 Baseline di riferimento (prima di toccare l'algoritmo)
 - [ ] Salvare `results.txt`, i plot e i parametri usati come **baseline v0** (es. in `benchmarks/baseline_v0/`), per almeno 2 sequenze × 3 livelli di rumore.
