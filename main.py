@@ -46,6 +46,8 @@ parser_args.add_argument('--noise_level', type=str, default='mid',
                         help='Noise level for data generation')
 parser_args.add_argument('--save_results', action='store_true',
                         help='Save results to disk')
+parser_args.add_argument('--sigma_image', type=float, default=1.0,
+                        help='Standard deviation of a keypoint measurement [px]')
 parser_args.add_argument('--epipolar_threshold', type=float, default=10.0,
                         help='Sampson distance [px] above which a match is rejected')
 parser_args.add_argument('--no_viewer', action='store_true',
@@ -176,7 +178,7 @@ msckf_parameters = MSCKFParameters(
     K = K,
     width = width,
     height = height,
-    sigma_image = 0.1,
+    sigma_image = args.sigma_image, # [px]
     
     #* IMU parameters
     only_imu = False,

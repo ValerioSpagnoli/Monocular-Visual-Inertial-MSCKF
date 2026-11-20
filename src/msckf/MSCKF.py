@@ -23,7 +23,7 @@ class MSCKFParameters:
                                                             [  0,   0,   1]]))
     width: int = 640
     height: int = 480
-    sigma_image: float = 0.2
+    sigma_image: float = 1.0 # standard deviation of a keypoint measurement [px]
     
     #* IMU parameters
     only_imu: bool = False
@@ -137,7 +137,8 @@ class MSCKF:
         self.T_W_C = parameters.T_W_C
         self.width = parameters.width
         self.height = parameters.height
-        self.sigma_image = parameters.sigma_image
+        # Residuals are computed in normalized image coordinates (K^-1 x): convert the pixel noise accordingly
+        self.sigma_image = parameters.sigma_image / np.mean([self.K[0, 0], self.K[1, 1]])
                 
         #* IMU
         self.only_imu = parameters.only_imu
