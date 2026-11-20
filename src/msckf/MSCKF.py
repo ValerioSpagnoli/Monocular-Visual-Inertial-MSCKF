@@ -526,10 +526,10 @@ class MSCKF:
                 Ci_p_hat = camera.W2Ci(W_p_hat)
                 res, Im_p_hat = camera.project_point(Ci_p_hat)
                 if res:
-                    depth = Ci_p_hat[2]
-                    Ci_v = camera.inverse_project_point(Im_p_hat)
-                    W_v = camera.Ci2W(Ci_v, is_versor=True)
-                    feature.inverse_depth_point.update(depth, W_v)
+                    # Anchor the inverse-depth point to the first camera: W_p_hat = base + m / rho, with m a unit vector,
+                    # so rho is the inverse of the distance along the ray (not of the depth along the optical axis)
+                    feature.inverse_depth_point = InverseDepthPoint(camera.T_W_Ci, W_p_hat - camera.T_W_Ci.t)
+                    feature.inverse_depth_point.update_depth(np.linalg.norm(W_p_hat - camera.T_W_Ci.t))
                     self.estimated_world_points.append(W_p_hat) #! DEBUG
                     self.currently_processed_world_points.append(W_p_hat) #! DEBUG
                     self.triangulated_points[index] = W_p_hat
@@ -558,8 +558,10 @@ class MSCKF:
             base = feature.inverse_depth_point.base
             m = feature.inverse_depth_point.m
 
-            Ci_f = R_C_W @ (rho * (base - t_W_C) + m)
-            W_f = camera.Ci2W(Ci_f)
+            # Feature in world and camera coordinates. The inverse-depth form R_C_W (rho (base - t) + m) gives the same
+            # projection but is scaled by rho, which would scale the Jacobians w.r.t. positions by the feature depth
+            W_f = base + m / rho
+            Ci_f = R_C_W @ (W_f - t_W_C)
 
             z_i = np.linalg.inv(self.K) @ np.append(observations[i], 1)
             z_i = z_i[:2] / z_i[2]
@@ -578,7 +580,9 @@ class MSCKF:
             den = u @ u
             if den > 1e-6: A = A - (A @ u)[:, None] * u / den
 
-            Hj_fi = -Hj_xi_[:, 3:]
+            # The feature Jacobian must come from the modified block (H_f = -H_p), otherwise the null-space projection
+            # removes the wrong direction and the measurement gains information on the unobservable yaw
+            Hj_fi = -A[:, 3:]
             
             Hj_xi = np.zeros((2, self.state.covariance.shape[1]))
             index = list(self.state.cameras.keys()).index(camera_index) 

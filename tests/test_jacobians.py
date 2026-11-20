@@ -225,3 +225,91 @@ def test_epipolar_residual(trial):
     line = F.T @ np.append(keypoint_1, 1)
     normal = line[:2] / np.linalg.norm(line[:2])
     assert epipolar_residual(T_C1_C2, K, keypoint_1, keypoint_2 + 10.0 * normal) > 2.0
+
+
+def feature_seen_by(cameras: dict, W_f: np.ndarray):
+    """Feature observed without noise by all cameras, anchored to the first one with the exact inverse depth."""
+    from src.msckf.FeatureExtractor import Feature
+    from src.utils.geometry import InverseDepthPoint
+    feature = Feature()
+    for index, camera in cameras.items():
+        feature.keypoints.append((K @ np.append(project(camera.T_W_Ci, W_f), 1))[:2])
+        feature.camera_indices.append(index)
+    anchor = cameras[feature.camera_indices[0]].T_W_Ci
+    feature.inverse_depth_point = InverseDepthPoint(anchor, W_f - anchor.t)
+    feature.inverse_depth_point.update_depth(np.linalg.norm(W_f - anchor.t))
+    return feature
+
+
+def test_feature_residual_and_jacobian():
+    """MSCKF.compute_residual_and_jacobians before the null-space projection (observability constraint disabled with g = 0)."""
+    T_W_C0 = random_pose()
+    poses = [T_W_C0 * Isometry3D(exp_so3(rng.normal(scale=0.05, size=3)), rng.normal(scale=0.3, size=3)) for _ in range(4)]
+    cameras = {k: Camera(K=K, width=640, height=480, T_W_Ci=T) for k, T in enumerate(poses)}
+    W_f = point_in_front(T_W_C0)
+    feature = feature_seen_by(cameras, W_f)
+    
+    msckf = fake_msckf(random_pose(), Isometry3D(np.eye(3), np.zeros(3)), np.eye(15 + 6 * len(cameras)), cameras=cameras)
+    msckf.state.imu.W_gravity = np.zeros(3)
+    msckf.project_on_nullspace = lambda H_f, r, H_x: (r, H_x) # keep the raw stacked residual and Jacobian
+    r, H_x = MSCKF.compute_residual_and_jacobians(msckf, feature)
+    
+    np.testing.assert_allclose(r, 0, atol=1e-9, err_msg='residual of a noiseless feature')
+    
+    # r = z - h(x_est) ≈ H δx with x_true = x_est ⊞ δx, hence H = d h(x_est ⊞ δx) / d δx
+    def prediction(d):
+        return np.concatenate([project(apply_correction(T, d[6*k:6*k+3], d[6*k+3:6*k+6]), W_f) for k, T in enumerate(poses)])
+    
+    numerical = numerical_jacobian(prediction, 6 * len(cameras))
+    np.testing.assert_allclose(H_x[:, 15:], numerical, atol=1e-6, err_msg='H_x camera blocks')
+
+
+def test_triangulation_sets_inverse_depth_point():
+    """After MSCKF.get_valid_features triangulates a lost feature, its inverse-depth point must be the triangulated point."""
+    from src.utils.geometry import Line
+    T_W_C0 = random_pose()
+    poses = [T_W_C0 * Isometry3D(exp_so3(rng.normal(scale=0.05, size=3)), rng.normal(scale=0.5, size=3)) for _ in range(4)]
+    cameras = {k: Camera(K=K, width=640, height=480, T_W_Ci=T) for k, T in enumerate(poses)}
+    # Point far from the optical axis, where depth along z and distance along the ray differ the most
+    W_f = T_W_C0.transform(np.array([2.5, 1.8, 4.0]))
+    feature = feature_seen_by(cameras, W_f)
+    feature.inverse_depth_point.update_depth(1.0) # wrong initial guess, to be fixed by the triangulation
+    for keypoint, index in zip(feature.keypoints, feature.camera_indices):
+        camera = cameras[index]
+        feature.lines.append(Line(camera.T_W_Ci.t, camera.Ci2W(camera.inverse_project_point(keypoint), is_versor=True), 1.0))
+    feature.tracked_for_n_frames, feature.lost_for_n_frames = len(cameras), 1
+    
+    msckf = fake_msckf(random_pose(), Isometry3D(np.eye(3), np.zeros(3)), np.eye(15 + 6 * len(cameras)), cameras=cameras)
+    msckf.__dict__.update(min_number_of_frames_to_be_lost=1, min_number_of_frames_to_be_tracked=2, use_parallax=False,
+                          min_parallax=0, estimated_world_points=[], currently_processed_world_points=[], triangulated_points={})
+    valid, _ = MSCKF.get_valid_features(msckf, {0: feature})
+    
+    assert 0 in valid
+    idp = feature.inverse_depth_point
+    np.testing.assert_allclose(idp.base + idp.m / idp.rho, W_f, atol=1e-6)
+
+
+def test_projected_jacobian_has_no_yaw_information():
+    """
+    With the observability constraint, the projected measurement Jacobian must be blind to the unobservable
+    rotation about gravity (Hesch et al. 2014): H_o N = 0, where for each camera clone N = [R_C_W g; -[p_C]x g].
+    """
+    T_W_C0 = random_pose()
+    poses = [T_W_C0 * Isometry3D(exp_so3(rng.normal(scale=0.05, size=3)), rng.normal(scale=0.3, size=3)) for _ in range(4)]
+    cameras = {k: Camera(K=K, width=640, height=480, T_W_Ci=T) for k, T in enumerate(poses)}
+    feature = feature_seen_by(cameras, point_in_front(T_W_C0))
+    # Current estimates drifted from the first estimates (null states), as after a few EKF updates
+    for camera in cameras.values():
+        camera.T_W_Ci = apply_correction(camera.T_W_Ci_null, rng.normal(scale=0.02, size=3), rng.normal(scale=0.05, size=3))
+    
+    msckf = fake_msckf(random_pose(), Isometry3D(np.eye(3), np.zeros(3)), np.eye(15 + 6 * len(cameras)), cameras=cameras)
+    msckf.state.imu.W_gravity = np.array([0, 0, -9.81])
+    msckf.project_on_nullspace = lambda H_f, r, H_x: MSCKF.project_on_nullspace(msckf, H_f, r, H_x)
+    _, H_o = MSCKF.compute_residual_and_jacobians(msckf, feature)
+    
+    g = msckf.state.imu.W_gravity
+    N = np.zeros(15 + 6 * len(cameras))
+    for k, camera in cameras.items(): # unobservable direction evaluated at the first estimates
+        N[15 + 6*k: 18 + 6*k] = camera.T_W_Ci_null.R.T @ g
+        N[18 + 6*k: 21 + 6*k] = -skew(camera.T_W_Ci_null.t) @ g
+    np.testing.assert_allclose(H_o @ N, 0, atol=1e-8)
