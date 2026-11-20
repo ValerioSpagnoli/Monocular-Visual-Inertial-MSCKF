@@ -40,7 +40,7 @@ class MSCKFParameters:
     min_cosine_similarity: float = 0.82
     use_parallax: bool = True
     min_parallax: float = 20
-    epipolar_rejection_threshold: float = 5
+    epipolar_rejection_threshold: float = 5    # Sampson distance [px]
     homography_rejection_threshold: float = 5
     min_number_of_frames_to_be_lost: int = 1
     min_number_of_frames_to_be_tracked: int = 5
@@ -76,6 +76,21 @@ max_number_of_camera_states: {self.max_number_of_camera_states}\n \
 device: {self.device}'
                             
     
+
+def epipolar_residual(T_C1_C2: Isometry3D, K: np.ndarray, keypoint_1: np.ndarray, keypoint_2: np.ndarray) -> float:
+    """
+    Sampson distance [px] of the match (keypoint_1, keypoint_2) from the epipolar constraint x1^T F x2 = 0,
+    with F = K^-T [t]x R K^-1 built from T_C1_C2 (pose of camera 2 in camera 1).
+    It approximates the pixel distance of the match from the closest pair satisfying the constraint,
+    and is zero when the two keypoints are images of the same 3D point.
+    """
+    invK = np.linalg.inv(K)
+    F = invK.T @ skew(T_C1_C2.t) @ T_C1_C2.R @ invK
+    x1, x2 = np.append(keypoint_1, 1), np.append(keypoint_2, 1)
+    F_x2, Ft_x1 = F @ x2, F.T @ x1
+    denominator = F_x2[0]**2 + F_x2[1]**2 + Ft_x1[0]**2 + Ft_x1[1]**2
+    return float(np.abs(x1 @ F_x2) / np.sqrt(denominator)) if denominator > 0 else 0.0
+
 
 def observability_constrained_transition(Phi: np.ndarray, dt: float,
                                         T_W_I_null: Isometry3D, v_W_I_null: np.ndarray,
@@ -406,8 +421,7 @@ class MSCKF:
                                 debug_lines.append([[int(matched_keypoint[0] + self.width), int(matched_keypoint[1])], [int(feature_keypoint[0]), int(feature_keypoint[1])]])  
                                 debug_lines_colors.append([0, 255, 0])
                     else:
-                        F = invK.T @ skew(T_C1_C2.t) @ T_C1_C2.R @ invK
-                        score = np.append(matched_keypoint, 1).T @ F @ np.append(feature_keypoint, 1)
+                        score = epipolar_residual(T_C1_C2, self.K, feature_keypoint, matched_keypoint)
                         
                         if score > self.epipolar_rejection_threshold:
                             epipolar_test_passed = False

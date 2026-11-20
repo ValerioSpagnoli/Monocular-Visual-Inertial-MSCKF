@@ -46,6 +46,8 @@ parser_args.add_argument('--noise_level', type=str, default='mid',
                         help='Noise level for data generation')
 parser_args.add_argument('--save_results', action='store_true',
                         help='Save results to disk')
+parser_args.add_argument('--epipolar_threshold', type=float, default=10.0,
+                        help='Sampson distance [px] above which a match is rejected')
 parser_args.add_argument('--no_viewer', action='store_true',
                         help='Do not stream to Rerun (faster, for evaluations)')
 parser_args.add_argument('--device', type=str, default='auto',
@@ -191,7 +193,7 @@ msckf_parameters = MSCKFParameters(
     min_cosine_similarity=0.95,
     use_parallax=True,
     min_parallax=45,
-    epipolar_rejection_threshold=0.005,
+    epipolar_rejection_threshold=args.epipolar_threshold, # Sampson distance [px]
     homography_rejection_threshold=5,
     min_number_of_frames_to_be_tracked=4,
     min_number_of_frames_to_be_lost=2,
@@ -503,6 +505,10 @@ str_results += f' - ATE (evaluated over {evaluated_steps} steps, {traveled_dista
 str_results += f'   - Position RMSE:  {np.sqrt(ate_squared_sum / max(evaluated_steps, 1)):.4f} m\n'
 str_results += f'   - Orient. RMSE:   {np.rad2deg(np.sqrt(aoe_squared_sum / max(evaluated_steps, 1))):.3f} deg\n'
 str_results += f'   - Inside 3σ:      {100 * inside_3sigma / max(evaluated_steps, 1):.1f} % of steps\n'
+str_results += f' - Rejections:\n'
+str_results += f'   - Epipolar:       {msckf.number_of_features_discarded_for_epipolar_test}\n'
+str_results += f'   - Homography:     {msckf.number_of_features_discarder_for_homography_test}\n'
+str_results += f'   - Gating (χ²):    {msckf.number_of_residuals_discarded_for_gasting_test}\n'
 str_results += f' - Profiling:\n'
 str_results += f'   - Mean:           {mean_loop_time} s - {mean_loop_frequency} Hz\n'
 str_results += f'   - With Camera:    {mean_loop_time_with_camera} s - {mean_loop_frequency_with_camera} Hz\n'

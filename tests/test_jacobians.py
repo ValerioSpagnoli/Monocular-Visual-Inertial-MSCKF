@@ -16,7 +16,7 @@ from scipy.spatial.transform import Rotation
 from src.utils.geometry import Isometry3D, skew
 from src.msckf.Camera import Camera
 from src.msckf.IMU import IMU
-from src.msckf.MSCKF import MSCKF, MSCKFState, observability_constrained_transition
+from src.msckf.MSCKF import MSCKF, MSCKFState, observability_constrained_transition, epipolar_residual
 
 rng = np.random.default_rng(0)
 EPS = 1e-6
@@ -207,3 +207,21 @@ def test_correction_keeps_null_states():
     np.testing.assert_array_equal(camera.T_W_Ci_null.R, T_W_C.R)
     np.testing.assert_array_equal(camera.T_W_Ci_null.t, T_W_C.t)
     assert not np.allclose(imu.v_W_Ii_null, imu.v_W_Ii)
+
+
+@pytest.mark.parametrize('trial', range(5))
+def test_epipolar_residual(trial):
+    """Zero for two images of the same 3D point, clearly positive for a wrong match."""
+    T_W_C1 = random_pose()
+    T_W_C2 = T_W_C1 * Isometry3D(exp_so3(rng.normal(scale=0.1, size=3)), rng.normal(scale=0.3, size=3))
+    W_f = point_in_front(T_W_C1)
+    pixel = lambda T, p: (K @ np.append(project(T, p), 1))[:2]
+    keypoint_1, keypoint_2 = pixel(T_W_C1, W_f), pixel(T_W_C2, W_f)
+    T_C1_C2 = T_W_C1.inv() * T_W_C2
+    
+    assert epipolar_residual(T_C1_C2, K, keypoint_1, keypoint_2) < 1e-9
+    # Moving the keypoint along the epipolar line normal by d pixels gives a Sampson distance of about d/2 (error split over the two images)
+    F = np.linalg.inv(K).T @ skew(T_C1_C2.t) @ T_C1_C2.R @ np.linalg.inv(K)
+    line = F.T @ np.append(keypoint_1, 1)
+    normal = line[:2] / np.linalg.norm(line[:2])
+    assert epipolar_residual(T_C1_C2, K, keypoint_1, keypoint_2 + 10.0 * normal) > 2.0
