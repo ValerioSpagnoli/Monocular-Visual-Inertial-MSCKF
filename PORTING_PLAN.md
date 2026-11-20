@@ -68,25 +68,50 @@ Le fasi vanno svolte **in ordine**: ogni fase produce una baseline misurabile ch
 
 Per ogni bug: test che lo riproduce → fix → confronto con la baseline. Un commit per bug.
 
+Riferimento di valutazione: EuRoC **V1_01_easy, primi 6000 passi IMU (30 s, 8,25 m)** con `--no_viewer` (~50 s per run).
+
+| Commit | Correzione | ATE RMSE | Dentro 3σ |
+|---|---|---|---|
+| — | baseline (dopo il supporto EuRoC) | 126,9 m | 21,4 % |
+| `55c2f38` | segno della correzione di orientazione in `correct()` | 64,9 m | 23,3 % |
+| `b9d062c` | Jacobiano di augmentation, blocco posizione | 26,3 m | 23,4 % |
+| `7df4250` | transizione con vincolo di osservabilità (trasposte JPL) | 1,90 m | 32,4 % |
+| `eb307fd` | aliasing degli stati null in `correct()` | 1,93 m | 15,7 % |
+| `1d0feed` | test epipolare (ordine dei punti, valore assoluto) → distanza di Sampson in px, soglia 10 px | 1,04 m | 15,7 % |
+| `2678dac` | `sigma_image` in pixel (prima 0,1 normalizzato ≈ 40 px) → 1 px | **0,17 m** | 8,5 % |
+
+Sequenze complete dopo `2678dac` (σ = 1 px, soglia epipolare 10 px):
+
+| Sequenza | Distanza | ATE RMSE | Orientazione RMSE | Dentro 3σ |
+|---|---|---|---|---|
+| V1_01_easy | 58,6 m | 0,29 m | 3,6° | 1,7 % |
+| V1_02_medium | 75,9 m | 0,41 m | 5,0° | 2,6 % |
+| V1_03_difficult | 79,0 m | 0,43 m | 3,1° | 0,3 % |
+
 ### 2.0 Infrastruttura di test
-- [ ] Aggiungere `pytest` alle dipendenze e un task `pixi run test`.
+- [x] Aggiungere `pytest` alle dipendenze e un task `pixi run test`.
 - [ ] Test unitari su `geometry.py` (`Isometry3D`, `skew`, `intersection_of_lines`, `InverseDepthPoint`).
-- [ ] Test dei **Jacobiani** (`Camera.compute_jacobians`, matrice F in `process_imu`, J in `state_augmentation`) confrontandoli con differenze finite numeriche.
+- [x] Test dei **Jacobiani** con differenze finite (`tests/test_jacobians.py`), sui metodi veri del filtro: `compute_jacobians`, `state_augmentation`, `correct`, la transizione OC e `epipolar_residual`. Convenzione: `R_vero = R·exp(δθ)` (JPL locale).
 - [ ] Test di consistenza: NEES medio su una sequenza sintetica senza rumore visivo.
+- [x] `--no_viewer` per valutazioni veloci; ATE RMSE, consistenza 3σ e contatori degli scarti nel riepilogo finale.
 
 ### 2.1 Bug già individuati
-- [ ] **Test epipolare senza valore assoluto** (`MSCKF.add_camera_measurements`): `score > threshold` lascia sempre passare i residui negativi → usare `abs(score)`. Valutare anche la distanza di Sampson in pixel al posto del residuo algebrico, così la soglia ha un'unità fisica.
-- [ ] **Stato "null" (OC-EKF) in aliasing:** `Camera.T_W_Ci_null = T_W_Ci` e `imu.T_W_Ii_null = imu.T_W_Ii` puntano allo stesso oggetto, che `correct()` modifica sul posto → fare copie profonde e/o rendere `Isometry3D` immutabile.
+- [x] **Test epipolare**: oltre al valore assoluto mancante, verificava `x2ᵀE x1` invece di `x1ᵀE x2`, quindi non era nullo per le associazioni corrette. Ora è la distanza di Sampson in pixel (`--epipolar_threshold`).
+- [x] **Stato "null" (OC-EKF) in aliasing:** `correct()` crea oggetti nuovi invece di modificarli sul posto.
 - [ ] **Random walk dei bias non accumulato** (`photorealistic_generator.py`): alla misura si somma l'incremento `*_bias_noise` invece del bias accumulato. Inoltre il rumore va scalato con `dt` (densità continua → discreta: `σ_d = σ_c / sqrt(dt)` per il rumore bianco, `σ_c · sqrt(dt)` per il random walk). Rigenerare i dataset.
-- [ ] **`results.txt` scritto sempre** (`main.py`), anche senza `--save_results` → crash se la cartella non esiste.
+- [x] **`results.txt` scritto sempre** → ora solo con `--save_results`.
 - [ ] **NaN in `IMU.initialize`:** `axis` viene normalizzato prima del controllo `isclose(theta, 0/π)`.
-- [ ] **`time.sleep(0.005)` nel loop principale:** falsa il profiling (il valore "171 Hz senza camera" ≈ 1/5 ms è dominato dallo sleep). Rimuoverlo o escluderlo dalle misure.
-- [ ] **Sincronizzazione camera/IMU per uguaglianza esatta dei timestamp** (`abs(round(...)) < 1e-5`): funziona solo sui dati generati. Sostituirla con un buffer basato sul tempo (prerequisito per i dati reali).
+- [x] **`time.sleep(0.005)` nel loop principale:** rimosso. Senza lo sleep il ciclo con la sola IMU gira a ~5600 Hz.
+- [x] **Sincronizzazione camera/IMU:** `imu_ts >= cam_ts` (fatto con il supporto EuRoC).
+- [ ] **Convenzione del segno della gravità** (emersa con EuRoC): uniformare generatore sintetico e integrazione alla convenzione fisica `f = Rᵀ(a − g)`.
 
 ### 2.2 Punti da verificare
-- [ ] `sigma_image` è applicato a residui in **coordinate normalizzate** (`K⁻¹·x`): 0.1 corrisponde a ~32 px con f=320. Verificare che sia voluto; esprimerlo in pixel e convertirlo (`σ_px / f`).
-- [ ] Segni e convenzioni di `compute_jacobians` (H_x rispetto a δθ e δp della camera) coerenti con la correzione `R_W_Ci = R_W_estCi @ R_Ci_estCi.T`.
-- [ ] Il vincolo di osservabilità applicato anche a H_x (`compute_residual_and_jacobians`): controllare la formula di `u` e che usi lo stato null corretto (dipende dal fix dell'aliasing).
+- [x] `sigma_image` in **coordinate normalizzate** → ora in pixel (`--sigma_image`, default 1 px).
+- [x] Segni e convenzioni di `compute_jacobians`: corretti. Era sbagliata la correzione in `correct()`.
+- [x] Vincolo di osservabilità nella transizione: `Φ_θθ` e `u` usavano `R` invece di `Rᵀ` (notazione JPL di Hesch).
+- [x] Jacobiano di `state_augmentation`, blocco posizione←δθ: `−R[t]×` invece di `[R t]×`.
+- [ ] Vincolo di osservabilità applicato a H_x (`compute_residual_and_jacobians`): verificare `u` con un test.
+- [ ] **Consistenza:** con σ = 1 px il filtro è troppo sicuro di sé (solo ~8 % dei passi dentro i 3σ). Possibili cause: rumore IMU non gonfiato, errore di allineamento iniziale incluso nell'ATE, triangolazione con poca parallasse.
 - [ ] `prune_poorest_camera_states` può rimuovere la camera appena clonata o quelle più recenti → escludere gli ultimi N cloni.
 - [ ] `Q = Φ G Qc Gᵀ Φᵀ dt`: è un'approssimazione; valutare l'integrazione trapezoidale.
 - [ ] Calcolo di RTE/ROE in `main.py`: il fallback `(1 if gt > 0 else 0)` è sempre 0 nel ramo `gt == 0`; lo "smoothing" degli outlier altera le metriche → riportare anche i valori grezzi.
