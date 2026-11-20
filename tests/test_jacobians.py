@@ -16,7 +16,7 @@ from scipy.spatial.transform import Rotation
 from src.utils.geometry import Isometry3D, skew
 from src.msckf.Camera import Camera
 from src.msckf.IMU import IMU
-from src.msckf.MSCKF import MSCKF, MSCKFState
+from src.msckf.MSCKF import MSCKF, MSCKFState, observability_constrained_transition
 
 rng = np.random.default_rng(0)
 EPS = 1e-6
@@ -155,3 +155,37 @@ def test_imu_propagation_jacobian():
     numerical = numerical_jacobian(error_after_propagation, 9)
     np.testing.assert_allclose(Phi[0:3, 0:3], numerical[0:3, 0:3], atol=1e-4, err_msg='δθ <- δθ')
     np.testing.assert_allclose(Phi[3:6, 0:3], numerical[3:6, 0:3], atol=1e-4, err_msg='δv <- δθ')
+
+
+def test_observability_constrained_transition():
+    """With the null state equal to the state before propagation, the OC transition must still match the true error dynamics."""
+    dt = 0.005
+    omega = np.array([0.3, -0.2, 0.5])
+    acc = np.array([0.4, 0.1, -9.6])
+    W_gravity = np.array([0, 0, -9.81])
+    
+    def propagate(T_W_I, v):
+        imu = IMU(T_W_Ii=T_W_I, v_W_Ii=v.copy(), W_gravity=W_gravity)
+        imu.integrate(linear_acceleration=acc, angular_velocity=omega, dt=dt)
+        return imu.T_W_Ii, imu.v_W_Ii
+    
+    T0, v0 = random_pose(), rng.normal(size=3)
+    T1, v1 = propagate(T0, v0)
+    
+    # Unconstrained Φ ≈ I + F dt on the full 15-dim state, as in MSCKF.process_imu
+    F = np.zeros((15, 15))
+    F[0:3, 0:3] = -skew(omega)
+    F[0:3, 3:6] = -np.eye(3)
+    F[6:9, 0:3] = -T0.R @ skew(acc)
+    F[6:9, 9:12] = -T0.R
+    F[12:15, 6:9] = np.eye(3)
+    Phi = observability_constrained_transition(np.eye(15) + F * dt, dt, T0, v0, T1, v1, W_gravity)
+    
+    def error_after_propagation(d):
+        T1p, v1p = propagate(apply_correction(T0, d[:3], d[6:9]), v0 + d[3:6])
+        return np.concatenate([orientation_error(T1p.R, T1.R), v1p - v1, T1p.t - T1.t])
+    
+    numerical = numerical_jacobian(error_after_propagation, 9)
+    np.testing.assert_allclose(Phi[0:3, 0:3], numerical[0:3, 0:3], atol=1e-6, err_msg='δθ <- δθ')
+    np.testing.assert_allclose(Phi[6:9, 0:3], numerical[3:6, 0:3], atol=1e-3, err_msg='δv <- δθ')
+    np.testing.assert_allclose(Phi[12:15, 0:3], numerical[6:9, 0:3], atol=1e-4, err_msg='δp <- δθ')

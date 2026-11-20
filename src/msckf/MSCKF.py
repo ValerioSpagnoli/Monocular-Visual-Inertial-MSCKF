@@ -77,6 +77,31 @@ device: {self.device}'
                             
     
 
+def observability_constrained_transition(Phi: np.ndarray, dt: float,
+                                        T_W_I_null: Isometry3D, v_W_I_null: np.ndarray,
+                                        T_W_I: Isometry3D, v_W_I: np.ndarray, W_gravity: np.ndarray) -> np.ndarray:
+    """
+    OC-EKF transition matrix (Hesch et al., "Consistency Analysis and Improvement of Vision-aided Inertial Navigation", 2014),
+    evaluated with the previous (null) state and the propagated state.
+    The paper uses the JPL rotation C = R_I_W = R_W_I.T, hence the transposes.
+    """
+    Phi = Phi.copy()
+    Phi[:3, :3] = T_W_I.R.T @ T_W_I_null.R
+    
+    u = T_W_I_null.R.T @ W_gravity
+    s = u / (u @ u)
+    
+    A_vel = Phi[6:9, :3].copy()
+    A_pos = Phi[12:15, :3].copy()
+    
+    w1 = skew(v_W_I_null - v_W_I) @ W_gravity
+    w2 = skew(dt * v_W_I_null + T_W_I_null.t - T_W_I.t) @ W_gravity
+    
+    Phi[6:9, :3] = A_vel - (A_vel @ u - w1)[:, None] * s
+    Phi[12:15, :3] = A_pos - (A_pos @ u - w2)[:, None] * s
+    return Phi
+
+
 @dataclass
 class MSCKFState:
     imu: IMU = None
@@ -235,19 +260,7 @@ class MSCKF:
         Phi = np.eye(15) + Fdt + 0.5* Fdt2 + (1.0/6.0)*Fdt3
         
         #* Enforce observability constraint
-        Phi[:3, :3] = self.state.imu.T_W_Ii.R @ self.state.imu.T_W_Ii_null.R.T
-        
-        u = self.state.imu.T_W_Ii_null.R @ self.state.imu.W_gravity
-        s = u / (u @ u)
-        
-        A_vel = Phi[6:9, :3].copy()
-        A_pos = Phi[12:15, :3].copy()
-        
-        w1 = skew(self.state.imu.v_W_Ii_null - self.state.imu.v_W_Ii) @ self.state.imu.W_gravity
-        w2 = skew(dt * self.state.imu.v_W_Ii_null + self.state.imu.T_W_Ii_null.t - self.state.imu.T_W_Ii.t) @ self.state.imu.W_gravity
-        
-        Phi[6:9, :3] = A_vel - (A_vel @ u - w1)[:, None] * s
-        Phi[12:15, :3] = A_pos - (A_pos @ u - w2)[:, None] * s
+        Phi = observability_constrained_transition(Phi, dt, imu.T_W_Ii_null, imu.v_W_Ii_null, imu.T_W_Ii, imu.v_W_Ii, imu.W_gravity)
         
         #* Update covariance
         P_imu = self.state.covariance[:15, :15] 
