@@ -26,12 +26,11 @@ public:
     ~Visualizer();
 
     /// Called at every IMU step; image is non-null after an image has been processed.
-    /// rejected: keypoints of the matches discarded by the frontend in this image.
     void step(long long index, double timestamp, const VioSystem& system, const std::optional<Pose>& ground_truth, const cv::Mat* image,
-              const std::vector<Vec2>& rejected, const Evaluator& evaluator);
+              const Evaluator& evaluator);
 
 private:
-    void logFrame(const VioSystem& system, const cv::Mat& image, const std::vector<Vec2>& rejected, double timestamp, const Evaluator& evaluator);
+    void logFrame(const VioSystem& system, const cv::Mat& image, double timestamp, const Evaluator& evaluator);
 
     std::unique_ptr<rerun::RecordingStream> rec_;
     std::vector<std::array<float, 3>> estimate_trajectory_, ground_truth_trajectory_, corrected_trajectory_;

@@ -18,7 +18,6 @@
 #include "dataset.hpp"
 #include "evaluation.hpp"
 #include "msckf/vio_system.hpp"
-#include "msckf_frontend/tracker.hpp"
 #include "msckf_frontend/xfeat.hpp"
 #include "visualizer.hpp"
 
@@ -41,8 +40,7 @@ struct Options {
     double sigma_image = 2.0;
     double max_triangulation_error = 6.0;
     double zupt_max_disparity = 1.0;
-    double ransac_threshold = 1.5;
-    double min_cosine_similarity = 0.95;
+    double epipolar_threshold = 10.0;
     double init_sigma_theta = 0.05;
     double init_sigma_ba = 0.5;
     double imu_noise_scale = 10.0;
@@ -79,8 +77,7 @@ int main(int argc, char** argv) {
     app.add_option("--sigma_image", o.sigma_image, "Standard deviation of a keypoint measurement [px]");
     app.add_option("--max_triangulation_error", o.max_triangulation_error, "Maximum RMS reprojection error of a triangulated feature [px]");
     app.add_option("--zupt_max_disparity", o.zupt_max_disparity, "Zero-velocity update below this median feature displacement [px]");
-    app.add_option("--ransac_threshold", o.ransac_threshold, "Tracking: RANSAC distance from the epipolar line [px]");
-    app.add_option("--min_cosine_similarity", o.min_cosine_similarity, "Tracking: minimum descriptor similarity of a match");
+    app.add_option("--epipolar_threshold", o.epipolar_threshold, "Sampson distance above which a match is rejected [px]");
     app.add_option("--init_sigma_theta", o.init_sigma_theta, "Initial orientation standard deviation [rad]");
     app.add_option("--init_sigma_ba", o.init_sigma_ba, "Initial accelerometer bias standard deviation [m/s^2]");
     app.add_option("--imu_noise_scale", o.imu_noise_scale, "Multiplier of the datasheet IMU white-noise densities");
@@ -119,8 +116,11 @@ int main(int argc, char** argv) {
     p.estimate_initial_gyroscope_bias = true;
     p.initial_covariance_diagonal << Vec3::Constant(o.init_sigma_theta * o.init_sigma_theta), Vec3::Constant(0.005 * 0.005),
         Vec3::Constant(0.01 * 0.01), Vec3::Constant(o.init_sigma_ba * o.init_sigma_ba), Vec3::Zero();
+    p.min_cosine_similarity = 0.95;
     p.use_parallax = true;
     p.min_parallax = o.min_parallax;
+    p.epipolar_rejection_threshold = o.epipolar_threshold;
+    p.homography_rejection_threshold = 5.0;
     p.min_number_of_frames_to_be_tracked = 4;
     p.min_number_of_frames_to_be_lost = 2;
     p.max_number_of_camera_states = 30;
@@ -134,25 +134,20 @@ int main(int argc, char** argv) {
     extractor_options.top_k = o.top_k;
     extractor_options.use_coreml = o.coreml;
     const XFeatExtractor extractor(o.model, extractor_options);
-    Tracker::Options tracker_options;
-    tracker_options.ransac_threshold = o.ransac_threshold;
-    tracker_options.min_cosine_similarity = static_cast<float>(o.min_cosine_similarity);
-    Tracker tracker(tracker_options);
 
     const std::string results_folder = o.data + "/" + o.source + "/" + o.sequence + "/results";
     if (o.save_results) std::filesystem::create_directories(results_folder);
     Visualizer visualizer(sequence, o.no_viewer ? std::nullopt : std::optional<std::string>(o.save_results ? results_folder + "/recording.rrd" : ""));
 
-    //* Frontend in a separate thread: the next image is read, undistorted, passed to XFeat and tracked while the
-    //* backend processes the current one (the time spent waiting for it is counted in the loop time). Images are
-    //* tracked in order, one at a time, and the tracker does not depend on the filter state.
+    //* Front-end in a separate thread: the next image is read, undistorted and passed to XFeat while the filter
+    //* processes the current one (the time spent waiting for it is counted in the loop time)
     auto load = [&](std::size_t index) {
         cv::Mat image = sequence.loadImage(index), gray;
         cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
-        return std::make_pair(image, tracker.track(extractor.extract(gray)));
+        return std::make_pair(image, extractor.extract(gray));
     };
     std::size_t camera_index = 1;  // the first image only marks the end of the static initialization window
-    std::future<std::pair<cv::Mat, Tracker::Result>> next_frame = std::async(std::launch::async, load, camera_index);
+    std::future<std::pair<cv::Mat, FrameFeatures>> next_frame = std::async(std::launch::async, load, camera_index);
 
     Evaluator evaluator;
     std::vector<double> loop_time, loop_time_camera, loop_time_imu;
@@ -172,15 +167,13 @@ int main(int argc, char** argv) {
         system.addImu(measurement);
         bool camera = false;
         cv::Mat image;
-        std::vector<Vec2> rejected;
         if (measurement.timestamp >= sequence.images[camera_index].timestamp - 1e-6) {
             camera = true;
-            auto [frame_image, tracked] = next_frame.get();
+            auto [frame_image, features] = next_frame.get();
             image = frame_image;
             const double timestamp = sequence.images[camera_index].timestamp;
             if (++camera_index < sequence.images.size()) next_frame = std::async(std::launch::async, load, camera_index);
-            system.addImage(timestamp, tracked.frame);
-            rejected = std::move(tracked.rejected);
+            system.addImage(timestamp, features);
         }
 
         const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
@@ -195,7 +188,7 @@ int main(int argc, char** argv) {
         const bool evaluated = evaluator.add(estimate, filter.covariance().block<3, 3>(12, 12), filter.covariance().block<3, 3>(0, 0),
                                              sequence.ground_truth[i], corrected);
         visualizer.step(static_cast<long long>(i), measurement.timestamp, system, evaluated ? evaluator.alignedGroundTruth() : std::nullopt,
-                        camera ? &image : nullptr, rejected, evaluator);
+                        camera ? &image : nullptr, evaluator);
         if (o.save_results) {
             const Eigen::Quaterniond q(estimate.R);
             const Pose c = corrected.value_or(estimate);
@@ -212,10 +205,10 @@ int main(int argc, char** argv) {
     std::string summary = "VIO:\n" + evaluator.summary();
     std::snprintf(buffer, sizeof(buffer),
                   " - Final IMU biases:\n   - Gyroscope:      [%.4f %.4f %.4f] rad/s\n   - Accelerometer:  [%.3f %.3f %.3f] m/s^2\n"
-                  " - Rejections:\n   - RANSAC:         %lld\n   - Gating (χ²):    %lld\n   - Triangulation:  %lld\n"
+                  " - Rejections:\n   - Epipolar:       %lld\n   - Homography:     %lld\n   - Gating (χ²):    %lld\n   - Triangulation:  %lld\n"
                   " - Zero-velocity updates: %lld\n",
                   filter.imu().gyroscope_bias.x(), filter.imu().gyroscope_bias.y(), filter.imu().gyroscope_bias.z(), filter.imu().accelerometer_bias.x(),
-                  filter.imu().accelerometer_bias.y(), filter.imu().accelerometer_bias.z(), tracker.rejectedMatches(),
+                  filter.imu().accelerometer_bias.y(), filter.imu().accelerometer_bias.z(), filter.epipolarRejections(), filter.homographyRejections(),
                   filter.gatingRejections(), filter.triangulationRejections(), filter.zeroVelocityUpdates());
     summary += buffer;
     if (system.loopClosure()) {

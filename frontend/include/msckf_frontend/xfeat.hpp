@@ -2,20 +2,12 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 #include <opencv2/core.hpp>
 
-#include "msckf/math.hpp"
+#include "msckf/msckf.hpp"
 
 namespace msckf {
-
-/// Keypoints, descriptors and detection scores of one image.
-struct FrameFeatures {
-    std::vector<Vec2> keypoints;           // [px], in the undistorted image
-    Eigen::MatrixXf descriptors;           // one L2-normalized row per keypoint
-    std::vector<float> scores;
-};
 
 /// XFeat keypoints and descriptors (Potje et al., CVPR 2024) with ONNX Runtime. The network (models/xfeat.onnx,
 /// exported by tools/export_xfeat_onnx.py) returns the dense descriptors, the keypoint heatmap and the reliability

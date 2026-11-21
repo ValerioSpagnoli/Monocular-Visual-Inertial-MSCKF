@@ -15,7 +15,7 @@ public:
     void addImu(const ImuMeasurement& measurement) { filter_.addImu(measurement); }
 
     /// Processes an image; returns the loop detected at this image, if any.
-    std::optional<LoopDetection> addImage(double timestamp, const TrackedFrame& frame);
+    std::optional<LoopDetection> addImage(double timestamp, const FrameFeatures& features);
 
     /// Odometry pose of the IMU, and the same pose corrected with the loop closures.
     const Pose& odometryPose() const { return filter_.imu().T_W_I; }

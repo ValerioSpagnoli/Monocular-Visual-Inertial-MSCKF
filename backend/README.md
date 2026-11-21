@@ -3,11 +3,11 @@
 C++17 implementation of the filter (ported from the Python code of the thesis), meant to run on Android. It depends
 only on Eigen (header-only), so the same sources build on desktop and with the Android NDK.
 
-The backend covers everything after feature tracking: IMU propagation with the observability constraint, camera
-clones, Gauss-Newton triangulation, the null-space MSCKF update with chi-square gating, zero-velocity updates, clone
-pruning and loop closure. Feature extraction and tracking stay outside the backend: the frontend (`frontend/`) runs
-XFeat with ONNX Runtime (also available on Android), associates the features over time and passes the observations
-(track id, keypoint, descriptor) to the backend.
+The backend covers everything after feature extraction: IMU propagation with the observability constraint, camera
+clones, descriptor matching and epipolar/homography checks, Gauss-Newton triangulation, the null-space MSCKF update
+with chi-square gating, zero-velocity updates, clone pruning and loop closure. Feature extraction (XFeat) stays
+outside the backend: the frontend (`frontend/`) runs it with ONNX Runtime, also available on Android, and passes
+keypoints, descriptors and scores to the backend.
 
 ## API
 
@@ -19,8 +19,8 @@ parameters.K = K;                      // IMU noise densities, thresholds (same 
 parameters.T_I_C = msckf::Pose(R_I_C, t_I_C);
 msckf::Msckf filter(parameters);
 
-filter.addImu({timestamp, gyro, accel});  // every IMU sample, accel = specific force
-filter.addImage(tracked_frame);            // after the IMU sample at the image timestamp; observations {id, keypoint, descriptor, score}
+filter.addImu({timestamp, gyro, accel});          // every IMU sample, accel = specific force
+filter.addImage({keypoints, descriptors, scores}); // after the IMU sample at the image timestamp
 
 filter.imu().T_W_I;   // current pose, also v_W_I, biases
 filter.covariance();  // [δθ, δbg, δv, δba, δp] of the IMU, then [δθ, δp] of each clone
