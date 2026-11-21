@@ -48,7 +48,9 @@ PYBIND11_MODULE(msckf_cpp, m) {
         .def_readwrite("max_number_of_camera_states", &Parameters::max_number_of_camera_states)
         .def_readwrite("max_triangulation_error", &Parameters::max_triangulation_error)
         .def_readwrite("zupt_max_disparity", &Parameters::zupt_max_disparity)
-        .def_readwrite("zupt_sigma_velocity", &Parameters::zupt_sigma_velocity);
+        .def_readwrite("zupt_sigma_velocity", &Parameters::zupt_sigma_velocity)
+        .def_readwrite("max_track_length", &Parameters::max_track_length)
+        .def_readwrite("update_features_on_prune", &Parameters::update_features_on_prune);
 
     py::class_<Msckf>(m, "Msckf")
         .def(py::init<const Parameters&>())

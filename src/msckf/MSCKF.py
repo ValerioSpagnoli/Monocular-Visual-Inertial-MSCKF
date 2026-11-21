@@ -459,11 +459,13 @@ class MSCKF:
                     test, M, M_inv = two_view_geometry[feature.camera_indices[j]]
                     
                     if test == 'homography':
-                        x1_pred = M_inv @ np.array([matched_keypoint[0], matched_keypoint[1], 1.0])
+                        # H = K R_C1_C2 K^-1 maps current pixels to the clone, H^-1 clone pixels to the current image.
+                        # Symmetric transfer error: each keypoint against the transfer of the other one
+                        x1_pred = M @ np.array([matched_keypoint[0], matched_keypoint[1], 1.0])
                         x1_pred = x1_pred[:2] / x1_pred[2]
-                        x2_pred = M @ np.array([feature_keypoint[0], feature_keypoint[1], 1.0])
+                        x2_pred = M_inv @ np.array([feature_keypoint[0], feature_keypoint[1], 1.0])
                         x2_pred = x2_pred[:2] / x2_pred[2]
-                        score = (np.linalg.norm(matched_keypoint - x1_pred) + np.linalg.norm(feature_keypoint - x2_pred)) / 2
+                        score = (np.linalg.norm(feature_keypoint - x1_pred) + np.linalg.norm(matched_keypoint - x2_pred)) / 2
                         
                         if score > self.homography_rejection_threshold: 
                             epipolar_test_passed = False

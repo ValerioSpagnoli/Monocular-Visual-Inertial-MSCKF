@@ -34,7 +34,9 @@ PATTERNS = {
 def run(source: str, sequence: str, extra: list) -> dict:
     command = [sys.executable, 'main.py', '--source', source, '--sequence', sequence, '--max_frames', '100000', '--no_viewer'] + extra
     start = time.time()
-    output = subprocess.run(command, capture_output=True, text=True).stdout
+    process = subprocess.run(command, capture_output=True, text=True)
+    output = process.stdout
+    if process.returncode != 0: print(f'{sequence} failed:\n' + process.stderr[-2000:], file=sys.stderr)
     result = {key: float(m.group(1)) if (m := re.search(pattern, output)) else float('nan') for key, pattern in PATTERNS.items()}
     result['wall'] = time.time() - start
     return result

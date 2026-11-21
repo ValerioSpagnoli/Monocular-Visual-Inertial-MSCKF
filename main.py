@@ -63,6 +63,12 @@ parser_args.add_argument('--only_imu', action='store_true',
                         help='Propagate with the IMU only, without visual updates (diagnostics)')
 parser_args.add_argument('--no_viewer', action='store_true',
                         help='Do not stream to Rerun (faster, for evaluations)')
+parser_args.add_argument('--min_parallax', type=float, default=45.0,
+                        help='Parallax between first and last observation that triggers the use of a tracked feature [deg]')
+parser_args.add_argument('--max_track_length', type=int, default=10,
+                        help='C++ backend: also use tracked features with this many observations (0 disables it)')
+parser_args.add_argument('--no_update_on_prune', action='store_true',
+                        help='C++ backend: do not use the features of the pruned clones')
 parser_args.add_argument('--backend', type=str, default='python', choices=['python', 'cpp'],
                         help='Filter implementation: Python, or the C++ core (build it with `pixi run build-cpp`)')
 parser_args.add_argument('--device', type=str, default='auto',
@@ -208,7 +214,7 @@ msckf_parameters = MSCKFParameters(
     number_of_extracted_features=300,
     min_cosine_similarity=0.95,
     use_parallax=True,
-    min_parallax=45,
+    min_parallax=args.min_parallax,
     epipolar_rejection_threshold=args.epipolar_threshold, # Sampson distance [px]
     homography_rejection_threshold=5,
     min_number_of_frames_to_be_tracked=4,
@@ -223,7 +229,8 @@ msckf_parameters = MSCKFParameters(
 
 if args.backend == 'cpp':
     from src.msckf.cpp_backend import CppMSCKF
-    msckf = CppMSCKF(parameters=msckf_parameters, rr=rr)
+    msckf = CppMSCKF(parameters=msckf_parameters, rr=rr,
+                     options=dict(max_track_length=args.max_track_length, update_features_on_prune=not args.no_update_on_prune))
 else:
     msckf = MSCKF(parameters=msckf_parameters, rr=rr)
 

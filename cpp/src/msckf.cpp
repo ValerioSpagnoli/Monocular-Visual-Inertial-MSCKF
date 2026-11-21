@@ -248,7 +248,8 @@ void Msckf::addCameraMeasurements(const FrameFeatures& frame) {
     for (const auto& [id, clone] : cameras_) {
         const Pose T_C1_C2 = clone.T_W_C.inverse() * camera.T_W_C;
         if (T_C1_C2.t.norm() < 0.01) {
-            const Mat3 H = parameters_.K * T_C1_C2.R * invK_;
+            // Pixels of the clone (camera 1) -> current camera (camera 2): x2 ~ K R_C1_C2^T K^-1 x1
+            const Mat3 H = parameters_.K * T_C1_C2.R.transpose() * invK_;
             two_view[id] = {true, H, H.inverse()};
         } else {
             two_view[id] = {false, fundamentalMatrix(T_C1_C2, invK_), Mat3::Zero()};
@@ -265,10 +266,7 @@ void Msckf::addCameraMeasurements(const FrameFeatures& frame) {
             const Vec2& previous = feature.keypoints[k];
             const TwoView& geometry = two_view.at(feature.camera_ids[k]);
             if (geometry.homography) {
-                const Vec3 x1 = geometry.M_inv * Vec3(keypoint.x(), keypoint.y(), 1.0);
-                const Vec3 x2 = geometry.M * Vec3(previous.x(), previous.y(), 1.0);
-                const double score = ((keypoint - x1.head<2>() / x1.z()).norm() + (previous - x2.head<2>() / x2.z()).norm()) / 2.0;
-                if (score > parameters_.homography_rejection_threshold) {
+                if (homographyTransferError(geometry.M, geometry.M_inv, previous, keypoint) > parameters_.homography_rejection_threshold) {
                     passed = false;
                     ++homography_rejections_;
                     rejected_matches_.push_back({keypoint, "homography"});
@@ -356,7 +354,8 @@ void Msckf::processFeatures() {
     }
 }
 
-void Msckf::getValidFeatures(const std::vector<long long>& candidates, std::vector<long long>& valid, std::vector<long long>& lost) {
+void Msckf::getValidFeatures(const std::vector<long long>& candidates, std::vector<long long>& valid, std::vector<long long>& lost,
+                             bool use_all_tracked) {
     for (long long id : candidates) {
         Feature& feature = features_.at(id);
         const bool is_lost = feature.lost_for_n_frames >= parameters_.min_number_of_frames_to_be_lost;
@@ -370,7 +369,12 @@ void Msckf::getValidFeatures(const std::vector<long long>& candidates, std::vect
             const double parallax = angleBetweenDirections(feature.lines.front().direction, feature.lines.back().direction) * 180.0 / EIGEN_PI;
             enough_parallax = parallax > parameters_.min_parallax;
         }
-        if (!is_lost && !enough_parallax) continue;
+        // Still-tracked features are also used when their track is long enough, or when their observations are about
+        // to be lost with the pruned clones, so that their information is not wasted
+        const int observations = static_cast<int>(feature.camera_ids.size());
+        const bool long_track = parameters_.max_track_length > 0 && observations >= parameters_.max_track_length;
+        const bool forced = use_all_tracked && observations >= parameters_.min_number_of_frames_to_be_tracked;
+        if (!is_lost && !enough_parallax && !long_track && !forced) continue;
 
         // The midpoint of the stored rays only initializes the Gauss-Newton triangulation, which uses the current
         // estimates of the camera clones. Features that cannot be triangulated reliably are not used.
@@ -559,7 +563,7 @@ void Msckf::pruneCameraStates() {
             }
 
     std::vector<long long> valid, lost;
-    getValidFeatures(candidates, valid, lost);
+    getValidFeatures(candidates, valid, lost, parameters_.update_features_on_prune);
     if (!valid.empty()) update(valid);
     removeCameras(to_remove);
 }

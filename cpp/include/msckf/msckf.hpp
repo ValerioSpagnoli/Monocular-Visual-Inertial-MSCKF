@@ -40,6 +40,11 @@ struct Parameters {
     // Zero-velocity update: when the tracked features do not move, the platform is static and v = 0 is a measurement
     double zupt_max_disparity = 1.0;               // median feature displacement between consecutive images [px], <= 0 disables it
     double zupt_sigma_velocity = 0.01;             // [m/s]
+
+    // Update strategy (C++ only; set max_track_length = 0 and update_features_on_prune = false for the behaviour of
+    // the Python implementation). Features are always used when lost or with min_parallax.
+    int max_track_length = 10;                     // also use still-tracked features with this many observations, 0 disables it
+    bool update_features_on_prune = true;          // use every feature seen by the pruned clones before removing them
 };
 
 /// Keypoints, descriptors and detection scores of one image (e.g. from XFeat).
@@ -112,7 +117,8 @@ private:
     void addCameraMeasurements(const FrameFeatures& frame);
     void zeroVelocityUpdate();
     void processFeatures();
-    void getValidFeatures(const std::vector<long long>& candidates, std::vector<long long>& valid, std::vector<long long>& lost);
+    void getValidFeatures(const std::vector<long long>& candidates, std::vector<long long>& valid, std::vector<long long>& lost,
+                          bool use_all_tracked = false);
     bool residualAndJacobian(const Feature& feature, VecX& r_o, MatX& H_o) const;
     bool gatingTest(const VecX& r, const MatX& H) const;
     void update(const std::vector<long long>& feature_ids);

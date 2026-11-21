@@ -104,7 +104,10 @@ def test_full_filter_parity():
                                  min_number_of_frames_to_be_tracked=4, min_number_of_frames_to_be_lost=1, max_triangulation_error=3.0, device='cpu')
 
     python_filter = MSCKF(parameters)
-    cpp_filter = msckf_cpp.Msckf(__import__('src.msckf.cpp_backend', fromlist=['to_cpp_parameters']).to_cpp_parameters(parameters))
+    cpp_parameters = __import__('src.msckf.cpp_backend', fromlist=['to_cpp_parameters']).to_cpp_parameters(parameters)
+    cpp_parameters.max_track_length = 0                # update strategy of the Python implementation
+    cpp_parameters.update_features_on_prune = False
+    cpp_filter = msckf_cpp.Msckf(cpp_parameters)
 
     image_at = dict(images)
     for k, measurement in enumerate(imu):

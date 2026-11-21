@@ -81,8 +81,11 @@ class _StateView:
 
 
 class CppMSCKF:
-    def __init__(self, parameters, rr=None):
-        self.core = msckf_cpp.Msckf(to_cpp_parameters(parameters))
+    def __init__(self, parameters, rr=None, options: dict = None):
+        """options: values of C++-only parameters (e.g. max_track_length), which have no Python counterpart."""
+        cpp_parameters = to_cpp_parameters(parameters)
+        for name, value in (options or {}).items(): setattr(cpp_parameters, name, value)
+        self.core = msckf_cpp.Msckf(cpp_parameters)
         self.state = _StateView(self.core)
         self.feature_extractor = FeatureExtractor(device=parameters.device)
         self.number_of_extracted_features = parameters.number_of_extracted_features
