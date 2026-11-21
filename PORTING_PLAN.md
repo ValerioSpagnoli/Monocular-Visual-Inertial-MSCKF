@@ -207,6 +207,13 @@ Da fare per la loop closure: descrittore globale discriminante (oggi la media de
 
 ---
 
+### Struttura e tracking (`b56d769`, `fbb940b`)
+- Repository riorganizzato in `backend/`, `frontend/` e `app/` (ognuno con `include/` e `src/`, e test dove presenti), più `tools/` e `third_party/`.
+- Il tracking delle feature è passato dal backend al frontend (`Tracker`): matching dei descrittori con le tracce attive e RANSAC della matrice fondamentale tra immagini consecutive, senza dipendere dallo stato del filtro. Il backend riceve osservazioni `{id, keypoint, descrittore}`.
+- Costo misurato: ATE medio EuRoC da 0,268 a 0,287 m. La verifica su due immagini è più debole di quella sulle osservazioni di tutta la traccia con le pose del filtro. Possibili recuperi: nel backend, quando una feature fallisce il gating, scartare l'osservazione peggiore e riprovare invece di scartare l'intera feature; oppure una verifica a più immagini nel frontend.
+
+---
+
 ## Fase 4 — Esecuzione su smartphone
 
 ### 4.0 Decisioni da prendere
