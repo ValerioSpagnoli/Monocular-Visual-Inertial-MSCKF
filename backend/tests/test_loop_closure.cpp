@@ -129,4 +129,10 @@ TEST_CASE("Loop closure recognizes a revisited place and corrects the drift") {
     REQUIRE(loop_found);
     CHECK(error_odometry > 0.3);
     CHECK(error_corrected < 0.1 * error_odometry);
+
+    // A later keyframe without any loop must keep the drift correction (not fall back to the odometry)
+    const Pose truth = circlePose(2.0 * EIGEN_PI * (n + 4) / n, 3.0);
+    const Pose odometry = Pose(rotationZ(0.003 * (n + 4)), Vec3(0.01 * (n + 4), -0.005 * (n + 4), 0.0)) * truth;
+    CHECK_FALSE(loop_closure.addKeyframe(0.1 * (n + 4), odometry, KeyframeObservations{}).has_value());
+    CHECK((loop_closure.correct(odometry).t - truth.t).norm() < 0.1 * (odometry.t - truth.t).norm());
 }

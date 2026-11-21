@@ -41,8 +41,10 @@ std::optional<LoopDetection> LoopClosure::addKeyframe(double timestamp, const Po
         }
     }
 
-    // Graph node with an odometry edge from the previous keyframe
-    const int index = graph_.addNode(T_W_I);
+    // Graph node with an odometry edge from the previous keyframe. The node starts from the odometry pose with the drift
+    // correction estimated so far: otherwise, until the next loop triggers an optimization, the last node would equal
+    // the odometry and the correction would drop to zero. The odometry edge is unaffected (the correction is rigid).
+    const int index = graph_.addNode(correction_ * T_W_I);
     if (index > 0) {
         const Pose T_prev_curr = keyframes_.back().T_W_I_vio.inverse() * T_W_I;
         graph_.addEdge(index - 1, index, T_prev_curr, parameters_.odometry_sigma_p, parameters_.odometry_sigma_yaw, false);
