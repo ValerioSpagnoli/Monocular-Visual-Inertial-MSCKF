@@ -143,26 +143,39 @@ Resta l'inclinazione su V1_01: il ground truth EuRoC dichiara b_a,y ≈ 0,55 m/s
 
 ## Fase 3 — Miglioramento delle prestazioni
 
+Riferimento: EuRoC V1_01_easy, primi 30 s, `--no_viewer`, Mac Apple Silicon, XFeat su MPS. Il **fattore di tempo reale** è il tempo di elaborazione diviso per la durata dei dati (< 1 = più veloce del tempo reale).
+
+| Commit | Modifica | Frame con camera | Passo IMU | Fattore tempo reale |
+|---|---|---|---|---|
+| — | dopo la fase 2 | 80 ms | 0,18 ms | ≈ 1,6 |
+| `1015137` | `Isometry3D` in forma chiusa, `K⁻¹` in cache | 70 ms | | |
+| `4d33902` | geometria a due viste una volta per frame nei test delle associazioni | 56 ms | | |
+| `4bfcd46` | null space con QR, soglia χ² in cache, `solve` nel gating | 54 ms | | |
+| `d5c75b6` | front-end (lettura, undistorsione, XFeat) in un thread; array NumPy nel loop | **45 ms** | **0,12 ms** | **0,93** |
+
+Sequenze complete: V1_02 0,77, TartanAir P001 0,80. Risultati invariati (differenze solo numeriche, ≤ 1 %).
+
 ### 3.1 Misurare prima di ottimizzare
-- [ ] Profilare con `cProfile` / `py-spy` (flame graph) separando: estrazione XFeat, matching, test epipolari, triangolazione, update EKF, logging Rerun.
-- [ ] Definire il target: es. ≥ 20 Hz camera e ≥ 200 Hz IMU su Mac, con le metriche invariate rispetto alla baseline v1.
+- [x] Profilare con `cProfile` (vedi tabella). XFeat su MPS: ~15 ms la rete + ~5 ms la NMS a 752×480; il resto è il filtro in Python.
+- [x] Target: tempo reale su EuRoC (camera 20 Hz, IMU 200 Hz) → raggiunto.
 
 ### 3.2 Ottimizzazioni Python a basso rischio
-- [ ] Nel loop principale, usare array NumPy al posto di `DataFrame.iloc[i]`.
-- [ ] `Isometry3D.inv()` in forma chiusa (`Rᵀ`, `-Rᵀt`) invece di `np.linalg.inv` su una 4×4; precalcolare `K⁻¹` (oggi è invertita in ogni ciclo).
-- [ ] Covarianza: aggiornare per blocchi (IMU-IMU, IMU-cam) senza ricreare matrici `M` complete in `state_augmentation`; `np.delete` → indicizzazione con maschere.
-- [ ] Proiezione sul left null-space: QR / rotazioni di Givens invece di `scipy.linalg.null_space` (SVD).
-- [ ] Vettorizzare i test epipolari/di omografia su tutte le feature e le osservazioni.
+- [x] Nel loop principale, array NumPy al posto di `DataFrame.iloc[i]`.
+- [x] `Isometry3D.inv()` e `__mul__` in forma chiusa; `K⁻¹` precalcolata.
+- [ ] Covarianza: aggiornare per blocchi senza ricreare matrici `M` complete in `state_augmentation`; `np.delete` → indicizzazione con maschere.
+- [x] Proiezione sul left null-space con QR invece di `scipy.linalg.null_space` (SVD).
+- [x] Test epipolari/omografia: geometria a due viste precalcolata per clone. Vettorizzazione completa ancora da fare (~4–5 ms a frame).
 - [ ] Mappa `camera_id → indice nello stato` invece di `list(keys).index(...)` (O(n) ripetuto).
-- [ ] Disattivare completamente debug, disegno e Rerun quando non servono (flag unico).
+- [x] Disegno di debug rimosso; `--no_viewer` disattiva Rerun.
+- [ ] Parallasse in `get_valid_features`: `angle_between_directions` chiamata ~290 volte a frame (~3 ms).
 
 ### 3.3 Front-end visivo
-- [ ] XFeat su `mps` / a risoluzione ridotta; misurare l'impatto sull'accuratezza.
-- [ ] Valutare `top_k` adattivo e una griglia per distribuire meglio le feature nell'immagine.
-- [ ] Pipeline in un thread separato (front-end) rispetto al filtro (back-end).
+- [x] XFeat su `mps` (`--device`, fase 1.2).
+- [ ] Risoluzione ridotta, `top_k` adattivo e griglia: da valutare insieme alla fase 4 (sul telefono XFeat girerà con CoreML/TFLite).
+- [x] Pipeline in un thread separato (front-end) rispetto al filtro (back-end).
 
 ### 3.4 Eventuale passaggio a codice compilato
-- [ ] Se dopo 3.2–3.3 il back-end è ancora il collo di bottiglia: prototipare le funzioni critiche con Numba, poi decidere se riscrivere il core in **C++ (Eigen)** con binding `pybind11`. Questo prepara direttamente la Fase 4.
+- [ ] Il filtro in Python costa ancora ~30 ms a frame, distribuiti su molte voci piccole. Il guadagno successivo viene dal core in **C++ (Eigen)**, che serve comunque per lo smartphone (Fase 4). I test numerici in `tests/` (Jacobiani, IMU, proiezione, generatori) possono diventare la specifica della versione C++.
 
 **Criterio di uscita:** target di frequenza raggiunto, metriche invariate → **baseline v2**.
 
