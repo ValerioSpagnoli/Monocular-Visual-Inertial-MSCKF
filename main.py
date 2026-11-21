@@ -46,8 +46,12 @@ parser_args.add_argument('--noise_level', type=str, default='mid',
                         help='Noise level for data generation')
 parser_args.add_argument('--save_results', action='store_true',
                         help='Save results to disk')
-parser_args.add_argument('--sigma_image', type=float, default=1.0,
+parser_args.add_argument('--sigma_image', type=float, default=2.0,
                         help='Standard deviation of a keypoint measurement [px]')
+parser_args.add_argument('--init_sigma_theta', type=float, default=0.05,
+                        help='Initial orientation standard deviation [rad] (real datasets)')
+parser_args.add_argument('--init_sigma_ba', type=float, default=0.5,
+                        help='Initial accelerometer bias standard deviation [m/s^2] (real datasets)')
 parser_args.add_argument('--epipolar_threshold', type=float, default=10.0,
                         help='Sampson distance [px] above which a match is rejected')
 parser_args.add_argument('--no_viewer', action='store_true',
@@ -141,10 +145,10 @@ W_gravity = np.array([0, 0, 9.81]) if source == 'euroc' else np.array([0, 0, -9.
 #* an initial uncertainty on the state, so the biases can be corrected by the visual updates
 estimate_initial_gyroscope_bias = source == 'euroc'
 if source == 'euroc':
-    initial_covariance_diagonal = np.concatenate([np.full(3, 0.01**2),   # δθ [rad]
+    initial_covariance_diagonal = np.concatenate([np.full(3, args.init_sigma_theta**2), # δθ [rad]
                                                   np.full(3, 0.005**2),  # δbg [rad/s]
                                                   np.full(3, 0.01**2),   # δv [m/s]
-                                                  np.full(3, 0.2**2),    # δba [m/s^2]
+                                                  np.full(3, args.init_sigma_ba**2), # δba [m/s^2]
                                                   np.zeros(3)])          # δp [m] (the start defines the origin)
 else:
     initial_covariance_diagonal = np.zeros(15)
@@ -291,7 +295,9 @@ T_W_I0_gt = Isometry3D(np.eye(3), np.zeros(3))
 T_W_I0_est = Isometry3D(np.eye(3), np.zeros(3))
 
 #* Real datasets: ground truth lives in its own world frame (Vicon) and is not available for the first samples,
-#* so it is aligned to the estimate at the first sample where it exists
+#* so it is aligned to the estimate at the first sample where it exists. The alignment has 4 dof (position and yaw
+#* about gravity): roll and pitch are observable, so their initial error must stay in the evaluation.
+#* Both world frames have z along gravity.
 align_gt = source == 'euroc'
 T_est_gt = None # transform from the ground-truth world frame to the estimator world frame
 
@@ -373,7 +379,9 @@ for i in tqdm(range(max_frames)):
     
     if align_gt:
         if T_est_gt is None:
-            T_est_gt = T_W_I1_est * T_W_I1_gt.inv()
+            R_est_gt = T_W_I1_est.R @ T_W_I1_gt.R.T
+            R_yaw = Rz(np.arctan2(R_est_gt[1, 0], R_est_gt[0, 0]))
+            T_est_gt = Isometry3D(R_yaw, T_W_I1_est.t - R_yaw @ T_W_I1_gt.t)
             T_W_I0_gt, T_W_I0_est = T_est_gt * T_W_I1_gt, T_W_I1_est
         T_W_I1_gt = T_est_gt * T_W_I1_gt
     
@@ -518,6 +526,9 @@ str_results += f'   - Position RMSE:  {np.sqrt(ate_squared_sum / max(evaluated_s
 str_results += f'   - Orient. RMSE:   {np.rad2deg(np.sqrt(aoe_squared_sum / max(evaluated_steps, 1))):.3f} deg\n'
 str_results += f'   - Inside 3σ:      {100 * inside_3sigma / max(evaluated_steps, 1):.1f} % of steps\n'
 str_results += f'   - Mean NEES:      position {nees_position_sum / max(evaluated_steps, 1):.2f}, orientation {nees_orientation_sum / max(evaluated_steps, 1):.2f} (consistent ≈ 3)\n'
+str_results += f' - Final IMU biases:\n'
+str_results += f'   - Gyroscope:      {np.array2string(msckf.state.imu.gyroscope_bias, precision=4)} rad/s\n'
+str_results += f'   - Accelerometer:  {np.array2string(msckf.state.imu.accelerometer_bias, precision=3)} m/s^2\n'
 str_results += f' - Rejections:\n'
 str_results += f'   - Epipolar:       {msckf.number_of_features_discarded_for_epipolar_test}\n'
 str_results += f'   - Homography:     {msckf.number_of_features_discarder_for_homography_test}\n'

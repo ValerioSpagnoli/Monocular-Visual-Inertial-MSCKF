@@ -88,11 +88,22 @@ Sequenze complete dopo `2678dac` (σ = 1 px, soglia epipolare 10 px):
 | V1_02_medium | 75,9 m | 0,41 m | 5,0° | 2,6 % |
 | V1_03_difficult | 79,0 m | 0,43 m | 3,1° | 0,3 % |
 
+Consistenza (dopo `b3e6a4d`, `32ef9d7` e i nuovi default: σ_img = 2 px, σθ₀ = 0,05 rad, σba₀ = 0,5 m/s², allineamento del ground truth a 4 gradi di libertà):
+
+| Sequenza | ATE RMSE | Orientazione RMSE | Dentro 3σ | NEES posizione / orientazione (consistente ≈ 3) | b_a stimato |
+|---|---|---|---|---|---|
+| V1_01_easy | 0,29 m | 3,0° | 67,2 % | 18 / 3357 | [−0,004, 0,142, 0,084] |
+| V1_02_medium | 0,28 m | 1,0° | 30,0 % | 47 / 88 | [−0,031, 0,163, 0,065] |
+| V1_03_difficult | 0,36 m | 1,4° | 18,2 % | 74 / 153 | [−0,014, 0,161, 0,069] |
+
+Prima di queste correzioni il NEES non era misurato; con la valutazione corretta, il filtro di `2678dac` dava su V1_01 (30 s) 1292 / 4380.
+Resta l'inclinazione su V1_01: il ground truth EuRoC dichiara b_a,y ≈ 0,55 m/s², mentre il filtro stima ≈ 0,14–0,16 m/s² in modo coerente su tre sequenze. La differenza (≈ 2,4°) finisce nell'inclinazione. Il bias del giroscopio invece coincide con il ground truth entro 1e-4 rad/s. Il bias dell'accelerometro nel ground truth EuRoC è una stima batch, non una misura: prima di concludere che il filtro sbaglia va verificato (ad esempio con l'inclinazione statica iniziale vs ground truth).
+
 ### 2.0 Infrastruttura di test
 - [x] Aggiungere `pytest` alle dipendenze e un task `pixi run test`.
 - [ ] Test unitari su `geometry.py` (`Isometry3D`, `skew`, `intersection_of_lines`, `InverseDepthPoint`).
 - [x] Test dei **Jacobiani** con differenze finite (`tests/test_jacobians.py`), sui metodi veri del filtro: `compute_jacobians`, `state_augmentation`, `correct`, la transizione OC e `epipolar_residual`. Convenzione: `R_vero = R·exp(δθ)` (JPL locale).
-- [ ] Test di consistenza: NEES medio su una sequenza sintetica senza rumore visivo.
+- [x] NEES medio di posizione e orientazione nel riepilogo e nel pannello Rerun (su EuRoC, non ancora su dati sintetici).
 - [x] `--no_viewer` per valutazioni veloci; ATE RMSE, consistenza 3σ e contatori degli scarti nel riepilogo finale.
 
 ### 2.1 Bug già individuati
@@ -110,7 +121,9 @@ Sequenze complete dopo `2678dac` (σ = 1 px, soglia epipolare 10 px):
 - [x] Segni e convenzioni di `compute_jacobians`: corretti. Era sbagliata la correzione in `correct()`.
 - [x] Vincolo di osservabilità nella transizione: `Φ_θθ` e `u` usavano `R` invece di `Rᵀ` (notazione JPL di Hesch).
 - [x] Jacobiano di `state_augmentation`, blocco posizione←δθ: `−R[t]×` invece di `[R t]×`.
-- [ ] Vincolo di osservabilità applicato a H_x (`compute_residual_and_jacobians`): verificare `u` con un test.
+- [x] Vincolo di osservabilità applicato a H_x: `H_f` va preso dal blocco modificato (`−A_p`), test `H_o·N = 0` sulla direzione di yaw.
+- [x] Modello di misura delle feature: Jacobiani calcolati sul punto scalato da ρ (posizione gonfiata della profondità) e re-inizializzazione inverse depth con la profondità lungo z invece della distanza lungo il raggio.
+- [x] Valutazione: errore di posizione nel frame del body confrontato con bound nel frame del mondo; allineamento del ground truth a 6 gradi di libertà che nascondeva l'errore iniziale di inclinazione → ora 4 gradi di libertà (posizione + yaw).
 - [ ] **Consistenza:** con σ = 1 px il filtro è troppo sicuro di sé (solo ~8 % dei passi dentro i 3σ). Possibili cause: rumore IMU non gonfiato, errore di allineamento iniziale incluso nell'ATE, triangolazione con poca parallasse.
 - [ ] `prune_poorest_camera_states` può rimuovere la camera appena clonata o quelle più recenti → escludere gli ultimi N cloni.
 - [ ] `Q = Φ G Qc Gᵀ Φᵀ dt`: è un'approssimazione; valutare l'integrazione trapezoidale.
