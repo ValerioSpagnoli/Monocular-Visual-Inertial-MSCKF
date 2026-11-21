@@ -32,7 +32,7 @@ rerun::LineStrip3D strip(const std::vector<std::array<float, 3>>& points) {
     std::vector<rerun::Vec3D> vertices;
     vertices.reserve(points.size());
     for (const auto& p : points) vertices.emplace_back(p[0], p[1], p[2]);
-    return rerun::LineStrip3D(vertices);
+    return rerun::LineStrip3D(std::move(vertices));  // moved: built from an lvalue it would only borrow the points
 }
 
 }  // namespace
@@ -109,7 +109,7 @@ void Visualizer::logFrame(const VioSystem& system, const cv::Mat& image, double 
             std::vector<rerun::Vec2D> track;
             for (std::size_t k = feature.keypoints.size() > 10 ? feature.keypoints.size() - 10 : 0; k < feature.keypoints.size(); ++k)
                 track.emplace_back(static_cast<float>(feature.keypoints[k].x()), static_cast<float>(feature.keypoints[k].y()));
-            tracks.emplace_back(track);
+            tracks.emplace_back(std::move(track));  // moved: a LineStrip2D built from an lvalue only borrows the points
             track_colors.push_back(color);
         }
     }
