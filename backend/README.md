@@ -1,13 +1,13 @@
-# MSCKF C++ core
+# Backend
 
-C++17 implementation of the filter (ported from the Python code of the thesis), meant to run on Android. It depends only on Eigen (header-only),
-so the same sources build on desktop and with the Android NDK.
+C++17 implementation of the filter (ported from the Python code of the thesis), meant to run on Android. It depends
+only on Eigen (header-only), so the same sources build on desktop and with the Android NDK.
 
-The core covers everything after feature extraction: IMU propagation with the observability constraint, camera
+The backend covers everything after feature extraction: IMU propagation with the observability constraint, camera
 clones, descriptor matching and epipolar/homography checks, Gauss-Newton triangulation, the null-space MSCKF update
 with chi-square gating, zero-velocity updates, clone pruning and loop closure. Feature extraction (XFeat) stays
-outside the core: the front-end (`cpp/frontend`) runs it with ONNX Runtime, also available on Android, and passes
-keypoints, descriptors and scores to the core.
+outside the backend: the frontend (`frontend/`) runs it with ONNX Runtime, also available on Android, and passes
+keypoints, descriptors and scores to the backend.
 
 ## API
 
@@ -34,18 +34,18 @@ system.correctedPose();  // odometry pose corrected with the 4-dof pose graph
 ## Build and test (desktop)
 
 ```bash
-pixi run build-cpp   # core, front-end, msckf_run and the Catch2 tests in build/cpp
-pixi run test-cpp    # core tests (filter, geometry, loop closure) and application tests (XFeat vs PyTorch reference, datasets)
-pixi run main --source euroc --sequence V1_01_easy
+pixi run build   # backend, frontend, msckf_run and the Catch2 tests in build/
+pixi run test    # backend tests (filter, geometry, loop closure) and frontend tests (XFeat vs PyTorch reference)
+pixi run main --sequence V1_01_easy
 ```
 
-The front-end (`cpp/frontend`, OpenCV and ONNX Runtime) and the application (`cpp/app`) are enabled by
-`MSCKF_BUILD_APP` (default ON on desktop).
+The frontend (`frontend/`, OpenCV and ONNX Runtime) and the application (`app/`) are enabled by
+`MSCKF_BUILD_FRONTEND` and `MSCKF_BUILD_APP` (both ON by default).
 
 ## Android
 
 ```bash
-pixi run build-android                # arm64-v8a, API 24 -> build/android-arm64-v8a/libmsckf_core.a
+pixi run build-android                # arm64-v8a, API 24 -> build/android-arm64-v8a/libmsckf_backend.a
 ABI=x86_64 pixi run build-android     # emulator
 ```
 

@@ -6,7 +6,7 @@
 #   ONLY=V1_ pixi run benchmark                 # sequences whose name contains V1_
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-RUN="$ROOT/build/cpp/msckf_run"
+RUN="$ROOT/build/msckf_run"
 SEQUENCES=("euroc V1_01_easy" "euroc V1_02_medium" "euroc V1_03_difficult")
 
 # Number following a label in the output of msckf_run, empty if the label is missing

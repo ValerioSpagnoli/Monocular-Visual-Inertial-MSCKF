@@ -1,4 +1,4 @@
-// Tests of the desktop application components: XFeat front-end against a PyTorch reference.
+// XFeat front-end against a reference saved once from the PyTorch implementation.
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 

@@ -12,10 +12,10 @@ cmake = ">=3.18"
 ninja = "*"
 cxx-compiler = "*"
 
-# Core library (cpp/include/msckf, cpp/src): Eigen only, so it builds unchanged for Android
+# Backend (backend/): Eigen only, so it builds unchanged for Android
 eigen = ">=3.4"
 
-# Desktop application (cpp/app, cpp/frontend): XFeat inference, images, datasets, command line, visualization
+# Frontend (frontend/) and desktop application (app/): XFeat inference, images, datasets, command line, visualization
 onnxruntime-cpp = ">=1.20"
 libopencv = ">=4.8"
 yaml-cpp = ">=0.8"
@@ -27,11 +27,11 @@ rerun-sdk = "==0.43.2"  # Rerun viewer (same version as the C++ SDK)
 catch2 = ">=3.4"
 
 [tasks]
-build-cpp = "cmake -S cpp -B build/cpp -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build/cpp"
-test-cpp = { cmd = "build/cpp/msckf_tests && build/cpp/msckf_app_tests", depends-on = ["build-cpp"] }
-main = { cmd = "build/cpp/msckf_run", depends-on = ["build-cpp"] }
-benchmark = { cmd = "bash tools/benchmark.sh", depends-on = ["build-cpp"] }
-build-android = "bash cpp/build_android.sh"
+build = "cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build"
+test = { cmd = "build/msckf_backend_tests && build/msckf_frontend_tests", depends-on = ["build"] }
+main = { cmd = "build/msckf_run", depends-on = ["build"] }
+benchmark = { cmd = "bash tools/benchmark.sh", depends-on = ["build"] }
+build-android = "bash tools/build_android.sh"
 
 # Export of XFeat to ONNX (only needed to regenerate models/xfeat.onnx): PyTorch and the XFeat submodule
 [feature.export.dependencies]

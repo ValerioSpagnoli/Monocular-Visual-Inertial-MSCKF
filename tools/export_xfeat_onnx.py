@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'accelerated_features'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'third_party', 'accelerated_features'))
 from modules.xfeat import XFeat
 
 

@@ -185,9 +185,10 @@ Sequenze complete: V1_02 0,77, TartanAir P001 0,80. Risultati invariati (differe
 ## Fase 3b — Progetto solo C++ (completata)
 
 Il codice Python è stato rimosso (`44d54d2`); resta su `main` e nella cronologia. Struttura attuale:
-- **Core** (`cpp/include/msckf`, `cpp/src`, solo Eigen): MSCKF, triangolazione Gauss-Newton, ZUPT, loop closure con grafo delle pose a 4 gradi di libertà, `VioSystem`. Cross-compila con l'NDK (`pixi run build-android`).
-- **Front-end** (`cpp/frontend`, OpenCV + ONNX Runtime): XFeat da `models/xfeat.onnx`, stessi keypoint di PyTorch (descrittori entro 5e-6), 17 ms per immagine su CPU.
-- **Applicazione** (`cpp/app`): `msckf_run` (dataset EuRoC/TartanAir/PeringLab, generatore IMU, valutazione, Rerun). `pixi run main`, `pixi run benchmark`, `pixi run test-cpp`.
+- **Backend** (`backend/`, solo Eigen): MSCKF, triangolazione Gauss-Newton, ZUPT, loop closure con grafo delle pose a 4 gradi di libertà, `VioSystem`. Cross-compila con l'NDK (`pixi run build-android`).
+- **Frontend** (`frontend/`, OpenCV + ONNX Runtime): XFeat da `models/xfeat.onnx`, stessi keypoint di PyTorch (descrittori entro 5e-6), 17 ms per immagine su CPU.
+- **Applicazione** (`app/`): `msckf_run` (EuRoC, valutazione, Rerun). `pixi run build`, `pixi run main`, `pixi run benchmark`, `pixi run test`.
+- Strumenti in `tools/`, submodule XFeat in `third_party/`. TartanAir/PeringLab e il generatore IMU rimossi (`aad5f7f`): solo EuRoC.
 - Export di XFeat: ambiente separato `pixi run -e export export-xfeat`.
 - Non portata: la sorgente completamente sintetica (`synthetic_generator.py`).
 

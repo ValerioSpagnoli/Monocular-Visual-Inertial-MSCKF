@@ -32,15 +32,26 @@ These results highlight the system's potential for precise localization in resou
 
 # Implementation
 
-The original Python implementation of the thesis has been ported to **C++17** (it is still available on the `main` branch and in the history). The code is organized in three layers:
+The original Python implementation of the thesis has been ported to **C++17** (it is still available on the `main` branch and in the history).
 
-| Layer | Path | Dependencies | Purpose |
-|---|---|---|---|
-| Core | `cpp/include/msckf`, `cpp/src` | Eigen | MSCKF (IMU propagation with observability constraint, Gauss-Newton triangulation, null-space update, χ² gating, zero-velocity updates), loop closure with a 4-dof pose graph, `VioSystem` entry point. Builds unchanged with the Android NDK. |
-| Front-end | `cpp/frontend` | OpenCV, ONNX Runtime | XFeat keypoints and descriptors from `models/xfeat.onnx`, reproducing `XFeat.detectAndCompute`. |
-| Application | `cpp/app` | yaml-cpp, CLI11, Rerun C++ SDK | `msckf_run`: EuRoC datasets, evaluation, visualization. |
+```
+backend/                 filter: MSCKF, IMU, geometry, loop closure, VioSystem (Eigen only, builds for Android)
+  include/msckf/  src/  tests/
+frontend/                feature extraction: XFeat with ONNX Runtime (OpenCV, ONNX Runtime)
+  include/msckf_frontend/  src/  tests/
+app/                     msckf_run: EuRoC datasets, evaluation, Rerun visualization (desktop only)
+models/xfeat.onnx        XFeat network
+tools/                   benchmark.sh, build_android.sh, export_xfeat_onnx.py
+third_party/             XFeat repository (submodule, only used to export the model)
+```
 
-See [cpp/README.md](cpp/README.md) for the core API and the Android build.
+| Part | Dependencies | Contents |
+|---|---|---|
+| Backend | Eigen | MSCKF (IMU propagation with observability constraint, descriptor matching with epipolar checks, Gauss-Newton triangulation, null-space update, χ² gating, zero-velocity updates), loop closure with a 4-dof pose graph, `VioSystem` entry point. |
+| Frontend | OpenCV, ONNX Runtime | XFeat keypoints and descriptors from `models/xfeat.onnx`, reproducing `XFeat.detectAndCompute`. |
+| App | yaml-cpp, CLI11, Rerun C++ SDK | `msckf_run`: EuRoC sequences, evaluation, visualization. |
+
+See [backend/README.md](backend/README.md) for the backend API and the Android build.
 
 # Getting Started
 
@@ -52,8 +63,8 @@ git clone --recursive git@github.com:ValerioSpagnoli/Monocular-Visual-Inertial-M
 ## Installation
 This project uses [Pixi](https://pixi.sh/latest/) for the toolchain and all the dependencies (Linux `linux-64` and macOS on Apple Silicon `osx-arm64`):
 ```bash
-pixi run build-cpp    # build everything in build/cpp
-pixi run test-cpp     # unit tests
+pixi run build    # build everything in build/
+pixi run test     # unit tests
 ```
 
 Note: to install Pixi run `curl -fsSL https://pixi.sh/install.sh | bash`
