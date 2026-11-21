@@ -16,7 +16,7 @@ from scipy.spatial.transform import Rotation
 from src.utils.geometry import Isometry3D, skew
 from src.msckf.Camera import Camera
 from src.msckf.IMU import IMU
-from src.msckf.MSCKF import MSCKF, MSCKFState, observability_constrained_transition, epipolar_residual
+from src.msckf.MSCKF import MSCKF, MSCKFState, observability_constrained_transition, epipolar_residual, triangulate_feature
 
 rng = np.random.default_rng(0)
 EPS = 1e-6
@@ -281,7 +281,8 @@ def test_triangulation_sets_inverse_depth_point():
     
     msckf = fake_msckf(random_pose(), Isometry3D(np.eye(3), np.zeros(3)), np.eye(15 + 6 * len(cameras)), cameras=cameras)
     msckf.__dict__.update(min_number_of_frames_to_be_lost=1, min_number_of_frames_to_be_tracked=2, use_parallax=False,
-                          min_parallax=0, triangulated_points={})
+                          min_parallax=0, triangulated_points={},
+                          max_triangulation_error=1e-3, number_of_features_discarded_for_triangulation=0)
     valid, _ = MSCKF.get_valid_features(msckf, {0: feature})
     
     assert 0 in valid
@@ -346,3 +347,24 @@ def test_null_space_projection():
     np.testing.assert_allclose(A_T @ H_f, 0, atol=1e-9)
     np.testing.assert_allclose(A_T @ A_T.T, np.eye(7), atol=1e-9)
     np.testing.assert_allclose(r_o, A_T @ r, atol=1e-9)
+
+
+@pytest.mark.parametrize('trial', range(5))
+def test_triangulation_recovers_point(trial):
+    T_W_C0 = random_pose()
+    poses = [T_W_C0 * Isometry3D(exp_so3(rng.normal(scale=0.05, size=3)), rng.normal(scale=0.3, size=3)) for _ in range(5)]
+    W_f = point_in_front(T_W_C0)
+    keypoints = [(K @ np.append(project(T, W_f), 1))[:2] for T in poses]
+    initial = T_W_C0.t + 1.4 * (W_f - T_W_C0.t) # 40 % too far
+    estimate, rms = triangulate_feature(poses, keypoints, np.linalg.inv(K), initial)
+    np.testing.assert_allclose(estimate, W_f, atol=1e-6)
+    assert rms < 1e-9
+
+
+def test_triangulation_rejects_point_behind_cameras():
+    T_W_C0 = random_pose()
+    poses = [T_W_C0 * Isometry3D(np.eye(3), np.array([0.2 * k, 0, 0])) for k in range(4)]
+    W_f = T_W_C0.transform(np.array([0.3, -0.2, -4.0])) # behind
+    keypoints = [(K @ np.append(project(T, W_f), 1))[:2] for T in poses]
+    estimate, _ = triangulate_feature(poses, keypoints, np.linalg.inv(K), W_f)
+    assert estimate is None

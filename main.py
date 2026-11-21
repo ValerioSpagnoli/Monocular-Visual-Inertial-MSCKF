@@ -53,6 +53,10 @@ parser_args.add_argument('--init_sigma_theta', type=float, default=0.05,
                         help='Initial orientation standard deviation [rad] (real datasets)')
 parser_args.add_argument('--init_sigma_ba', type=float, default=0.5,
                         help='Initial accelerometer bias standard deviation [m/s^2] (real datasets)')
+parser_args.add_argument('--max_triangulation_error', type=float, default=6.0,
+                        help='Maximum RMS reprojection error of a triangulated feature [px]')
+parser_args.add_argument('--zupt_max_disparity', type=float, default=1.0,
+                        help='Zero-velocity update when the median feature displacement is below this value [px] (<= 0 disables it)')
 parser_args.add_argument('--epipolar_threshold', type=float, default=10.0,
                         help='Sampson distance [px] above which a match is rejected')
 parser_args.add_argument('--only_imu', action='store_true',
@@ -207,6 +211,8 @@ msckf_parameters = MSCKFParameters(
     min_number_of_frames_to_be_tracked=4,
     min_number_of_frames_to_be_lost=2,
     max_number_of_camera_states=30,
+    max_triangulation_error=args.max_triangulation_error, # [px]
+    zupt_max_disparity=args.zupt_max_disparity, # [px]
     
     #* Feature extractor parameters
     device=device
@@ -555,6 +561,8 @@ str_results += f' - Rejections:\n'
 str_results += f'   - Epipolar:       {msckf.number_of_features_discarded_for_epipolar_test}\n'
 str_results += f'   - Homography:     {msckf.number_of_features_discarder_for_homography_test}\n'
 str_results += f'   - Gating (χ²):    {msckf.number_of_residuals_discarded_for_gasting_test}\n'
+str_results += f'   - Triangulation:  {msckf.number_of_features_discarded_for_triangulation}\n'
+str_results += f' - Zero-velocity updates: {msckf.number_of_zero_velocity_updates}\n'
 str_results += f' - Real-time factor: {np.sum(loop_time) / max(last_timestamp - first_timestamp, 1e-9):.2f} (processing time / data duration, < 1 is faster than real time)\n'
 str_results += f' - Profiling:\n'
 str_results += f'   - Mean:           {mean_loop_time} s - {mean_loop_frequency} Hz\n'

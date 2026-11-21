@@ -8,7 +8,7 @@ from functools import lru_cache
 from scipy.stats import chi2
 
 from dataclasses import dataclass, field
-from typing import List, Dict
+from typing import List, Dict, Optional, Tuple
 import rerun as rr
 
 @dataclass
@@ -45,6 +45,11 @@ class MSCKFParameters:
     min_number_of_frames_to_be_lost: int = 1
     min_number_of_frames_to_be_tracked: int = 5
     max_number_of_camera_states: int = 30
+    max_triangulation_error: float = 3.0       # maximum RMS reprojection error of a triangulated feature [px]
+    
+    #* Zero-velocity update: when the tracked features do not move, the platform is static and v = 0 is a measurement
+    zupt_max_disparity: float = 1.0            # median feature displacement between consecutive images [px], <= 0 disables it
+    zupt_sigma_velocity: float = 0.01          # standard deviation of the zero-velocity measurement [m/s]
     
     #* Feature extractor parameters
     device: str = 'auto'
@@ -76,6 +81,53 @@ max_number_of_camera_states: {self.max_number_of_camera_states}\n \
 device: {self.device}'
                             
     
+
+def triangulate_feature(poses: List[Isometry3D], keypoints: List[np.ndarray], invK: np.ndarray, initial_W_p: np.ndarray,
+                        max_iterations: int = 10) -> Tuple[Optional[np.ndarray], float]:
+    """
+    Gauss-Newton (Levenberg-Marquardt) triangulation in inverse depth, anchored to the first camera
+    (Mourikis and Roumeliotis 2007): x = [X/Z, Y/Z, 1/Z] in the anchor frame, minimizing the reprojection error
+    in normalized coordinates over all observations.
+    Returns the world point, or None if it is not in front of every camera, and the RMS reprojection error
+    in normalized coordinates.
+    """
+    anchor = poses[0]
+    observations = np.array([(invK @ np.array([k[0], k[1], 1.0]))[:2] for k in keypoints])
+    relative = [pose.inv() * anchor for pose in poses] # anchor camera in each camera: p_Ci = R p_C0 + t
+    R = np.array([T.R for T in relative])
+    t = np.array([T.t for T in relative])
+    
+    p0 = anchor.R.T @ (initial_W_p - anchor.t)
+    x = np.array([p0[0] / p0[2], p0[1] / p0[2], 1 / p0[2]]) if p0[2] > 1e-3 else np.array([observations[0, 0], observations[0, 1], 0.1])
+    
+    def residuals_and_jacobian(x):
+        h = R[:, :, 0] * x[0] + R[:, :, 1] * x[1] + R[:, :, 2] + t * x[2]                     # (N, 3)
+        residuals = (observations - h[:, :2] / h[:, 2:3]).reshape(-1)
+        dz_dh = np.zeros((len(h), 2, 3))
+        dz_dh[:, 0, 0] = dz_dh[:, 1, 1] = 1 / h[:, 2]
+        dz_dh[:, :, 2] = -h[:, :2] / h[:, 2:3]**2
+        dh_dx = np.stack([R[:, :, 0], R[:, :, 1], t], axis=2)                                  # (N, 3, 3)
+        return residuals, (dz_dh @ dh_dx).reshape(-1, 3), h
+    
+    damping = 1e-3
+    residuals, J, h = residuals_and_jacobian(x)
+    cost = residuals @ residuals
+    for _ in range(max_iterations):
+        step = np.linalg.solve(J.T @ J + damping * np.diag(np.diag(J.T @ J) + 1e-12), J.T @ residuals)
+        candidate = x + step
+        new_residuals, new_J, new_h = residuals_and_jacobian(candidate)
+        new_cost = new_residuals @ new_residuals
+        if new_cost < cost:
+            x, residuals, J, h, cost = candidate, new_residuals, new_J, new_h, new_cost
+            damping = max(damping / 10, 1e-9)
+            if np.linalg.norm(step) < 1e-8: break
+        else:
+            damping *= 10
+    
+    rms = np.sqrt(cost / len(observations))
+    if x[2] <= 0 or np.any(h[:, 2] <= 0): return None, rms # behind a camera (or at infinity)
+    return anchor.R @ (np.array([x[0], x[1], 1.0]) / x[2]) + anchor.t, rms
+
 
 @lru_cache(maxsize=None)
 def chi2_critical_value(dof: int, alpha: float = 0.95) -> float:
@@ -188,6 +240,13 @@ class MSCKF:
         self.number_of_features_discarder_for_homography_test = 0 #! DEBUG
         self.number_of_features_discarded_for_epipolar_test = 0 #! DEBUG
         self.number_of_residuals_discarded_for_gasting_test = 0 #! DEBUG
+        self.number_of_features_discarded_for_triangulation = 0
+        # Maximum RMS reprojection error of a triangulated feature, in normalized coordinates
+        self.max_triangulation_error = parameters.max_triangulation_error / np.mean([self.K[0, 0], self.K[1, 1]])
+        self.zupt_max_disparity = parameters.zupt_max_disparity
+        self.zupt_sigma_velocity = parameters.zupt_sigma_velocity
+        self.last_disparity = None          # median displacement of the features matched in the last image [px]
+        self.number_of_zero_velocity_updates = 0
         
         #* Diagnostics for visualization (reset at every image)
         self.rejected_keypoints: List[Tuple[np.ndarray, str]] = [] # matches discarded by the 'epipolar' or 'homography' test
@@ -216,6 +275,8 @@ class MSCKF:
         if not self.only_imu:                
             self.state_augmentation()
             self.add_camera_measurements(image, extracted_features)
+            if self.last_disparity is not None and self.last_disparity < self.zupt_max_disparity:
+                self.zero_velocity_update()
             self.process_features()    
             
             if len(self.state.cameras) > self.max_number_of_camera_states:
@@ -369,6 +430,7 @@ class MSCKF:
             lost_features_indices = not_matched.features_indices
 
             if len(matched.keypoints) == 0: return
+            disparities = []
             
             # Two-view geometry between each camera clone and the current camera, computed once per image:
             # homography for (almost) pure rotations, where the epipolar geometry is undefined, fundamental matrix otherwise
@@ -421,6 +483,7 @@ class MSCKF:
                     feature.lost_for_n_frames += 1
                     continue
 
+                disparities.append(np.linalg.norm(matched_keypoint - feature.keypoints[-1]))
                 Ci_v = camera.inverse_project_point(matched_keypoint)
                 W_v = camera.Ci2W(Ci_v, is_versor=True)      
                 
@@ -462,8 +525,28 @@ class MSCKF:
             self.last_camera_measurement.features_indices = np.array(self.last_camera_measurement.features_indices)
             self.last_camera_measurement.keypoints = current_camera_measurement.keypoints
             self.last_camera_measurement.scores = current_camera_measurement.scores
+            self.last_disparity = float(np.median(disparities)) if len(disparities) > 0 else None
 
                
+    def zero_velocity_update(self):
+        """
+        Static platform (features not moving in the image): v_W_I = 0 is used as a measurement. Without it the filter
+        drifts with the IMU alone while static, since features without parallax cannot be triangulated.
+        Small image motion alone is not enough (e.g. moving towards distant points), so the zero-velocity hypothesis
+        must also pass a chi-square test against the current velocity estimate.
+        """
+        n = self.state.covariance.shape[0]
+        H = np.zeros((3, n))
+        H[:, 6:9] = np.eye(3)
+        R = self.zupt_sigma_velocity**2 * np.eye(3)
+        r = (np.zeros(3) - self.state.imu.v_W_Ii).reshape(3, 1)
+        P = self.state.covariance
+        S = H @ P @ H.T + R
+        if (r.T @ np.linalg.solve(S, r)).item() > chi2_critical_value(3): return
+        K = P @ H.T @ np.linalg.inv(S)
+        self.correct(K, H, R, K @ r)
+        self.number_of_zero_velocity_updates += 1
+    
     def process_features(self):     
            
         valid_features, lost_features = self.get_valid_features(self.features)     
@@ -493,16 +576,25 @@ class MSCKF:
                     enough_parallax = True
             
             if lost or enough_parallax:
-                W_p_hat, C = intersection_of_lines(feature.lines)
+                # The midpoint of the stored rays (camera poses at observation time) only initializes the
+                # Gauss-Newton triangulation, which uses the current estimates of the camera clones
+                W_p_initial, _ = intersection_of_lines(feature.lines)
+                poses = [self.state.cameras[camera_index].T_W_Ci for camera_index in feature.camera_indices]
+                W_p_hat, rms = triangulate_feature(poses, feature.keypoints, np.linalg.inv(self.K), W_p_initial)
+                
+                # Features that cannot be triangulated reliably are not used: a wrong linearization point
+                # would enter the update as information
+                if W_p_hat is None or rms > self.max_triangulation_error:
+                    self.number_of_features_discarded_for_triangulation += 1
+                    if lost: lost_features[index] = feature
+                    continue
+                
+                # Anchor the inverse-depth point to the first camera: W_p_hat = base + m / rho, with m a unit vector,
+                # so rho is the inverse of the distance along the ray (not of the depth along the optical axis)
                 camera = self.state.cameras[feature.camera_indices[0]]
-                Ci_p_hat = camera.W2Ci(W_p_hat)
-                res, Im_p_hat = camera.project_point(Ci_p_hat)
-                if res:
-                    # Anchor the inverse-depth point to the first camera: W_p_hat = base + m / rho, with m a unit vector,
-                    # so rho is the inverse of the distance along the ray (not of the depth along the optical axis)
-                    feature.inverse_depth_point = InverseDepthPoint(camera.T_W_Ci, W_p_hat - camera.T_W_Ci.t)
-                    feature.inverse_depth_point.update_depth(np.linalg.norm(W_p_hat - camera.T_W_Ci.t))
-                    self.triangulated_points[index] = W_p_hat
+                feature.inverse_depth_point = InverseDepthPoint(camera.T_W_Ci, W_p_hat - camera.T_W_Ci.t)
+                feature.inverse_depth_point.update_depth(np.linalg.norm(W_p_hat - camera.T_W_Ci.t))
+                self.triangulated_points[index] = W_p_hat
                     
                 valid_features[index] = feature
                 if lost: lost_features[index] = feature
