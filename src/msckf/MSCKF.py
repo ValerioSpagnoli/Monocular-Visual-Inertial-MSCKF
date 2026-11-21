@@ -77,19 +77,26 @@ device: {self.device}'
                             
     
 
-def epipolar_residual(T_C1_C2: Isometry3D, K: np.ndarray, keypoint_1: np.ndarray, keypoint_2: np.ndarray) -> float:
+def fundamental_matrix(T_C1_C2: Isometry3D, invK: np.ndarray) -> np.ndarray:
+    """F = K^-T [t]x R K^-1 for T_C1_C2 (pose of camera 2 in camera 1): x1^T F x2 = 0 for pixels of the same point."""
+    return invK.T @ skew(T_C1_C2.t) @ T_C1_C2.R @ invK
+
+
+def sampson_distance(F: np.ndarray, keypoint_1: np.ndarray, keypoint_2: np.ndarray) -> float:
     """
-    Sampson distance [px] of the match (keypoint_1, keypoint_2) from the epipolar constraint x1^T F x2 = 0,
-    with F = K^-T [t]x R K^-1 built from T_C1_C2 (pose of camera 2 in camera 1).
-    It approximates the pixel distance of the match from the closest pair satisfying the constraint,
-    and is zero when the two keypoints are images of the same 3D point.
+    Sampson distance [px] of the match from the epipolar constraint x1^T F x2 = 0: it approximates the pixel
+    distance of the match from the closest pair satisfying the constraint.
     """
-    invK = np.linalg.inv(K)
-    F = invK.T @ skew(T_C1_C2.t) @ T_C1_C2.R @ invK
-    x1, x2 = np.append(keypoint_1, 1), np.append(keypoint_2, 1)
+    x1 = np.array([keypoint_1[0], keypoint_1[1], 1.0])
+    x2 = np.array([keypoint_2[0], keypoint_2[1], 1.0])
     F_x2, Ft_x1 = F @ x2, F.T @ x1
     denominator = F_x2[0]**2 + F_x2[1]**2 + Ft_x1[0]**2 + Ft_x1[1]**2
     return float(np.abs(x1 @ F_x2) / np.sqrt(denominator)) if denominator > 0 else 0.0
+
+
+def epipolar_residual(T_C1_C2: Isometry3D, K: np.ndarray, keypoint_1: np.ndarray, keypoint_2: np.ndarray) -> float:
+    """Sampson distance [px] of the match (keypoint_1, keypoint_2) for T_C1_C2 (pose of camera 2 in camera 1)."""
+    return sampson_distance(fundamental_matrix(T_C1_C2, np.linalg.inv(K)), keypoint_1, keypoint_2)
 
 
 def observability_constrained_transition(Phi: np.ndarray, dt: float,
@@ -358,7 +365,18 @@ class MSCKF:
 
             if len(matched.keypoints) == 0: return
             
+            # Two-view geometry between each camera clone and the current camera, computed once per image:
+            # homography for (almost) pure rotations, where the epipolar geometry is undefined, fundamental matrix otherwise
             invK = np.linalg.inv(self.K)
+            two_view_geometry = {}
+            for camera_index, clone in self.state.cameras.items():
+                T_C1_C2 = clone.T_W_Ci.inv() * camera.T_W_Ci
+                if np.linalg.norm(T_C1_C2.t) < 0.01:
+                    H = self.K @ T_C1_C2.R @ invK
+                    two_view_geometry[camera_index] = ('homography', H, np.linalg.inv(H))
+                else:
+                    two_view_geometry[camera_index] = ('epipolar', fundamental_matrix(T_C1_C2, invK), None)
+            
             for i in range(len(matched.keypoints)): # Update matched features
                 
                 matched_keypoint = matched.keypoints[i]
@@ -367,20 +385,16 @@ class MSCKF:
                 matched_feature = matched.features_indices[i]
                 feature = self.features[matched_feature]
                 
-                # Check the match against every previous observation of the feature: homography for (almost)
-                # pure rotations, where the epipolar geometry is undefined, Sampson distance otherwise
+                # Check the match against every previous observation of the feature
                 epipolar_test_passed = True
                 for j in range(len(feature.keypoints)):
                     feature_keypoint = feature.keypoints[j]
-                    camera_index = feature.camera_indices[j]
-                    feature_camera = self.state.cameras[camera_index]
-                    T_C1_C2 = feature_camera.T_W_Ci.inv() * camera.T_W_Ci
+                    test, M, M_inv = two_view_geometry[feature.camera_indices[j]]
                     
-                    if np.linalg.norm(T_C1_C2.t) < 0.01:
-                        H = self.K @ T_C1_C2.R @ invK
-                        x1_pred = np.linalg.inv(H) @ np.array([matched_keypoint[0], matched_keypoint[1], 1])
+                    if test == 'homography':
+                        x1_pred = M_inv @ np.array([matched_keypoint[0], matched_keypoint[1], 1.0])
                         x1_pred = x1_pred[:2] / x1_pred[2]
-                        x2_pred = H @ np.array([feature_keypoint[0], feature_keypoint[1], 1])
+                        x2_pred = M @ np.array([feature_keypoint[0], feature_keypoint[1], 1.0])
                         x2_pred = x2_pred[:2] / x2_pred[2]
                         score = (np.linalg.norm(matched_keypoint - x1_pred) + np.linalg.norm(feature_keypoint - x2_pred)) / 2
                         
@@ -390,7 +404,7 @@ class MSCKF:
                             self.rejected_keypoints.append((matched_keypoint, 'homography'))
                             break
                     else:
-                        score = epipolar_residual(T_C1_C2, self.K, feature_keypoint, matched_keypoint)
+                        score = sampson_distance(M, feature_keypoint, matched_keypoint)
                         
                         if score > self.epipolar_rejection_threshold:
                             epipolar_test_passed = False
