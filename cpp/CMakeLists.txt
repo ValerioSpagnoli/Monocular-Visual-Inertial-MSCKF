@@ -9,8 +9,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # The core only depends on Eigen (header-only), so it builds unchanged with the Android NDK.
-# Python bindings and tests are desktop-only options.
-option(MSCKF_BUILD_PYTHON "Build the pybind11 module msckf_cpp" ON)
+# The front-end, the desktop application and the tests are desktop-only options.
 option(MSCKF_BUILD_TESTS "Build the Catch2 unit tests" ON)
 option(MSCKF_BUILD_APP "Build the XFeat front-end (OpenCV, ONNX Runtime) and the desktop application" ON)
 
@@ -29,13 +28,6 @@ target_include_directories(msckf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 target_link_libraries(msckf_core PUBLIC Eigen3::Eigen)
 target_compile_options(msckf_core PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra>)
 
-if(MSCKF_BUILD_PYTHON)
-  find_package(Python 3 COMPONENTS Interpreter Development.Module REQUIRED)
-  find_package(pybind11 CONFIG REQUIRED)
-  pybind11_add_module(msckf_cpp python/bindings.cpp)
-  target_link_libraries(msckf_cpp PRIVATE msckf_core)
-endif()
-
 if(MSCKF_BUILD_APP)
   find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
   find_package(onnxruntime REQUIRED)
@@ -51,12 +43,6 @@ if(MSCKF_BUILD_APP)
   add_executable(msckf_run app/main.cpp app/dataset.cpp app/evaluation.cpp app/visualizer.cpp)
   target_link_libraries(msckf_run PRIVATE msckf_frontend yaml-cpp::yaml-cpp CLI11::CLI11 rerun_sdk)
   target_compile_options(msckf_run PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra>)
-
-  if(MSCKF_BUILD_PYTHON)
-    # Front-end bindings, used to check the C++ XFeat against PyTorch
-    pybind11_add_module(xfeat_cpp python/xfeat_bindings.cpp)
-    target_link_libraries(xfeat_cpp PRIVATE msckf_frontend)
-  endif()
 endif()
 
 if(MSCKF_BUILD_TESTS)

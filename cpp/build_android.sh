@@ -28,7 +28,7 @@ cmake -S "$ROOT/cpp" -B "$ROOT/build/android-$ABI" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="$ABI" -DANDROID_PLATFORM="android-$API" -DANDROID_STL=c++_shared \
     -DCMAKE_BUILD_TYPE=Release \
-    -DMSCKF_BUILD_PYTHON=OFF -DMSCKF_BUILD_TESTS=OFF -DMSCKF_BUILD_APP=OFF \
+    -DMSCKF_BUILD_TESTS=OFF -DMSCKF_BUILD_APP=OFF \
     -DEigen3_DIR="$CONDA_PREFIX/share/eigen3/cmake" \
     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
 cmake --build "$ROOT/build/android-$ABI"
