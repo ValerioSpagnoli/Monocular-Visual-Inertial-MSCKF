@@ -281,7 +281,7 @@ def test_triangulation_sets_inverse_depth_point():
     
     msckf = fake_msckf(random_pose(), Isometry3D(np.eye(3), np.zeros(3)), np.eye(15 + 6 * len(cameras)), cameras=cameras)
     msckf.__dict__.update(min_number_of_frames_to_be_lost=1, min_number_of_frames_to_be_tracked=2, use_parallax=False,
-                          min_parallax=0, estimated_world_points=[], currently_processed_world_points=[], triangulated_points={})
+                          min_parallax=0, triangulated_points={})
     valid, _ = MSCKF.get_valid_features(msckf, {0: feature})
     
     assert 0 in valid

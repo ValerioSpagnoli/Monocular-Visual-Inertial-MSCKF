@@ -173,14 +173,9 @@ class MSCKF:
         self.max_number_of_camera_states = parameters.max_number_of_camera_states
         self.camera_states_to_delete = int(self.max_number_of_camera_states/3)
         
-        self.estimated_world_points = [] #! DEBUG
-        self.currently_processed_world_points = [] #! DEBUG
         self.number_of_features_discarder_for_homography_test = 0 #! DEBUG
         self.number_of_features_discarded_for_epipolar_test = 0 #! DEBUG
         self.number_of_residuals_discarded_for_gasting_test = 0 #! DEBUG
-        self.current_image = None
-        self.stacked_image = None   
-        self.composed_image = None
         
         #* Diagnostics for visualization (reset at every image)
         self.rejected_keypoints: List[Tuple[np.ndarray, str]] = [] # matches discarded by the 'epipolar' or 'homography' test
@@ -202,7 +197,6 @@ class MSCKF:
         self.process_imu(imu_measurement)
         
     def feature_callback(self, image: cv2.Mat, extracted_features: ExtractedFeature = None):    
-        self.current_image = image #! DEBUG    
         self.rejected_keypoints, self.updated_feature_indices, self.gated_feature_indices = [], [], []
         if not self.first_measurement_arrived: self.first_measurement_arrived = True
         if not self.state.imu.is_initialized: return
@@ -351,7 +345,6 @@ class MSCKF:
                 feature.lines.append(Line(camera.T_W_Ci.t, W_v, score))
                 feature.inverse_depth_point = InverseDepthPoint(camera.T_W_Ci, W_v)
                 feature.tracked_for_n_frames += 1        
-                feature.color = (np.random.randint(0, 255), np.random.randint(0, 255), np.random.randint(0, 255)) #! DEBUG
                 self.features[self.last_feature_index] = feature
             
             self.last_camera_measurement = CameraMeasurement(descriptors = np.array(descriptors), features_indices = np.array(list(self.features.keys())))
@@ -365,16 +358,6 @@ class MSCKF:
 
             if len(matched.keypoints) == 0: return
             
-            #! DEBUG
-            if self.stacked_image is None: self.stacked_image = self.current_image
-            else: self.stacked_image = cv2.addWeighted(self.stacked_image, 0.5, image, 0.5, 0)
-            self.composed_image = np.hstack((self.stacked_image, self.current_image))
-            debug_keypoints = []
-            debug_keypoints_colors = []
-            debug_keypoints_radius = []
-            debug_lines = []
-            debug_lines_colors = []
-                        
             invK = np.linalg.inv(self.K)
             for i in range(len(matched.keypoints)): # Update matched features
                 
@@ -384,10 +367,8 @@ class MSCKF:
                 matched_feature = matched.features_indices[i]
                 feature = self.features[matched_feature]
                 
-                debug_keypoints.append([int(matched_keypoint[0] + self.width), int(matched_keypoint[1])])
-                debug_keypoints_colors.append(feature.color)
-                debug_keypoints_radius.append(3)
-                
+                # Check the match against every previous observation of the feature: homography for (almost)
+                # pure rotations, where the epipolar geometry is undefined, Sampson distance otherwise
                 epipolar_test_passed = True
                 for j in range(len(feature.keypoints)):
                     feature_keypoint = feature.keypoints[j]
@@ -407,20 +388,7 @@ class MSCKF:
                             epipolar_test_passed = False
                             self.number_of_features_discarder_for_homography_test += 1
                             self.rejected_keypoints.append((matched_keypoint, 'homography'))
-                            debug_keypoints.append([int(matched_keypoint[0] + self.width), int(matched_keypoint[1])])
-                            debug_keypoints_colors.append([0, 0, 255])
-                            debug_keypoints_radius.append(5)
-                            if j == len(feature.keypoints) - 1: 
-                                debug_lines.append([[int(matched_keypoint[0] + self.width), int(matched_keypoint[1])], [int(feature_keypoint[0]), int(feature_keypoint[1])]])
-                                debug_lines_colors.append([0, 0, 255])
                             break
-                        else:
-                            debug_keypoints.append([int(feature_keypoint[0]), int(feature_keypoint[1])])
-                            debug_keypoints_colors.append(feature.color)
-                            debug_keypoints_radius.append(3)
-                            if j == len(feature.keypoints) - 1: 
-                                debug_lines.append([[int(matched_keypoint[0] + self.width), int(matched_keypoint[1])], [int(feature_keypoint[0]), int(feature_keypoint[1])]])  
-                                debug_lines_colors.append([0, 255, 0])
                     else:
                         score = epipolar_residual(T_C1_C2, self.K, feature_keypoint, matched_keypoint)
                         
@@ -428,20 +396,7 @@ class MSCKF:
                             epipolar_test_passed = False
                             self.number_of_features_discarded_for_epipolar_test += 1
                             self.rejected_keypoints.append((matched_keypoint, 'epipolar'))
-                            debug_keypoints.append([int(matched_keypoint[0] + self.width), int(matched_keypoint[1])])   
-                            debug_keypoints_colors.append([255, 0, 0])
-                            debug_keypoints_radius.append(5)
-                            if j == len(feature.keypoints) - 1: 
-                                debug_lines.append([[int(matched_keypoint[0] + self.width), int(matched_keypoint[1])], [int(feature_keypoint[0]), int(feature_keypoint[1])]])
-                                debug_lines_colors.append([255, 0, 0])
                             break
-                        else:
-                            debug_keypoints.append([int(feature_keypoint[0]), int(feature_keypoint[1])])
-                            debug_keypoints_colors.append(feature.color)
-                            debug_keypoints_radius.append(3)
-                            if j == len(feature.keypoints) - 1: 
-                                debug_lines.append([[int(matched_keypoint[0] + self.width), int(matched_keypoint[1])], [int(feature_keypoint[0]), int(feature_keypoint[1])]])
-                                debug_lines_colors.append([0, 255, 0])  
                     
                 if not epipolar_test_passed: 
                     feature.lost_for_n_frames += 1
@@ -477,7 +432,6 @@ class MSCKF:
                 feature.lines.append(Line(camera.T_W_Ci.t, W_v, not_matched_score))
                 feature.inverse_depth_point = InverseDepthPoint(camera.T_W_Ci, W_v)
                 feature.tracked_for_n_frames += 1
-                feature.color = (np.random.randint(0, 255), np.random.randint(0, 255), np.random.randint(0, 255)) #! DEBUG
                 self.features[self.last_feature_index] = feature
             
             self.last_camera_measurement = CameraMeasurement()
@@ -492,7 +446,6 @@ class MSCKF:
 
                
     def process_features(self):     
-        self.currently_processed_world_points = [] #! DEBUG
            
         valid_features, lost_features = self.get_valid_features(self.features)     
         if len(valid_features) > 0:             
@@ -530,8 +483,6 @@ class MSCKF:
                     # so rho is the inverse of the distance along the ray (not of the depth along the optical axis)
                     feature.inverse_depth_point = InverseDepthPoint(camera.T_W_Ci, W_p_hat - camera.T_W_Ci.t)
                     feature.inverse_depth_point.update_depth(np.linalg.norm(W_p_hat - camera.T_W_Ci.t))
-                    self.estimated_world_points.append(W_p_hat) #! DEBUG
-                    self.currently_processed_world_points.append(W_p_hat) #! DEBUG
                     self.triangulated_points[index] = W_p_hat
                     
                 valid_features[index] = feature
@@ -723,53 +674,6 @@ class MSCKF:
             
             camera.T_W_Ci = Isometry3D(R_W_Ci, camera.T_W_Ci.t + delta_camera_position)
             
-    def prune_camera_states(self):        
-        camera_states_to_process: Dict[int, Camera] = {}
-        for i, (camera_index, camera) in enumerate(self.state.cameras.items()):
-            if i>0 and i % int(self.max_number_of_camera_states/self.camera_states_to_delete) == 0:
-                camera_states_to_process[camera_index] = camera
-                
-        features_to_process: Dict[int, Feature] = {}
-        for index, feature in self.features.items():
-            for camera_index in feature.camera_indices:
-                if camera_index in camera_states_to_process.keys():
-                    features_to_process[index] = feature
-                    break
-        
-        valid_features, _ = self.get_valid_features(features_to_process)
-        if len(valid_features) > 0: 
-            self.update(valid_features)        
-        
-        self.remove_cameras(camera_states_to_process)
-     
-    # def prune_poorest_camera_states(self):        
-    #     camera_states_to_process: Dict[int, Camera] = {}
-        
-    #     number_of_features_per_camera: Dict[int, int] = {} # camera_index, number_of_features
-    #     for index, feature in self.features.items():
-    #         for camera_index in feature.camera_indices:
-    #             if camera_index in number_of_features_per_camera.keys(): number_of_features_per_camera[camera_index] += 1
-    #             else: number_of_features_per_camera[camera_index] = 1
-        
-    #     sorted_number_of_features_per_camera = dict(sorted(number_of_features_per_camera.items(), key=lambda item: item[1]))
-    #     for camera_index, _ in sorted_number_of_features_per_camera.items():
-    #         if len(camera_states_to_process) == self.camera_states_to_delete: break
-    #         if camera_index not in list(self.state.cameras.keys())[len(self.state.cameras)-self.camera_states_to_delete:]:  
-    #             camera_states_to_process[camera_index] = self.state.cameras[camera_index]
-        
-    #     features_to_process: Dict[int, Feature] = {}
-    #     for index, feature in self.features.items():
-    #         for camera_index in feature.camera_indices:
-    #             if camera_index in camera_states_to_process.keys():
-    #                 features_to_process[index] = feature
-    #                 break
-        
-    #     valid_features, _ = self.get_valid_features(features_to_process)
-    #     if len(valid_features) > 0: 
-    #         self.update(valid_features)        
-            
-    #     self.remove_cameras(camera_states_to_process)
-    
     def prune_poorest_camera_states(self):
         
         number_of_features_per_camera: Dict[int, int] = {} # camera_index, number_of_features
