@@ -10,3 +10,6 @@ data/*
 
 # C++ build output
 build/
+
+# generated locally from third_party/LiftFeat, which has no license (pixi run -e export export-liftfeat)
+models/liftfeat.onnx

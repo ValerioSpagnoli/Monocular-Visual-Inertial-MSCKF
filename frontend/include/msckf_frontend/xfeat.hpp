@@ -3,16 +3,16 @@
 #include <memory>
 #include <string>
 
-#include <opencv2/core.hpp>
-
-#include "msckf/msckf.hpp"
+#include "msckf_frontend/feature_extractor.hpp"
 
 namespace msckf {
 
 /// XFeat keypoints and descriptors (Potje et al., CVPR 2024) with ONNX Runtime. The network (models/xfeat.onnx,
 /// exported by tools/export_xfeat_onnx.py) returns the dense descriptors, the keypoint heatmap and the reliability
 /// map; NMS, scores, top-k selection and descriptor sampling reproduce XFeat.detectAndCompute.
-class XFeatExtractor {
+/// LiftFeat (Liu et al., ICRA 2025), built on XFeat, is exported with the same outputs (tools/export_liftfeat_onnx.py,
+/// constant reliability) and runs with this class as well, with detection_threshold 0.1.
+class XFeatExtractor : public FeatureExtractor {
 public:
     struct Options {
         int top_k = 300;
@@ -26,7 +26,7 @@ public:
     ~XFeatExtractor();
 
     /// Keypoints [px] in the input image, L2-normalized descriptors and scores, sorted by decreasing score.
-    FrameFeatures extract(const cv::Mat& grayscale) const;
+    FrameFeatures extract(const cv::Mat& grayscale) const override;
 
 private:
     struct Impl;

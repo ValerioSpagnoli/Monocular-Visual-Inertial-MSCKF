@@ -10,6 +10,8 @@
 #include <fstream>
 #include <future>
 #include <iostream>
+#include <map>
+#include <memory>
 #include <numeric>
 
 #include <CLI/CLI.hpp>
@@ -18,6 +20,7 @@
 #include "dataset.hpp"
 #include "evaluation.hpp"
 #include "msckf/vio_system.hpp"
+#include "msckf_frontend/opencv_features.hpp"
 #include "msckf_frontend/xfeat.hpp"
 #include "visualizer.hpp"
 
@@ -29,7 +32,10 @@ struct Options {
     std::string data = "./data";
     std::string source = "euroc";
     std::string sequence = "V1_01_easy";
-    std::string model = "models/xfeat.onnx";
+    std::string features = "xfeat";
+    std::string model;  // default: models/<features>.onnx
+    double min_cosine_similarity = -1.0;  // < 0: default of the features
+    float detection_threshold = -1.0f;
     long long max_frames = 1'000'000;
     bool save_results = false;
     bool no_viewer = false;
@@ -49,6 +55,7 @@ struct Options {
     int max_track_length = 10;
     bool no_update_on_prune = false;
     LoopClosureParameters loop;
+    bool loop_descriptor_similarity_set = false;
 };
 
 std::string formatTime(const std::vector<double>& times) {
@@ -66,14 +73,17 @@ int main(int argc, char** argv) {
     app.add_option("--data", o.data, "Dataset root folder");
     app.add_option("--source", o.source, "Dataset source")->check(CLI::IsMember({"euroc"}));
     app.add_option("--sequence", o.sequence, "Sequence name (V1_01_easy, MH_01_easy, ...)");
-    app.add_option("--model", o.model, "XFeat ONNX model");
+    app.add_option("--features", o.features, "Keypoints and descriptors")->check(CLI::IsMember({"xfeat", "liftfeat", "orb", "sift", "akaze"}));
+    app.add_option("--model", o.model, "ONNX model of xfeat/liftfeat (default models/<features>.onnx)");
+    app.add_option("--min_cosine_similarity", o.min_cosine_similarity, "Minimum descriptor similarity of a match (default per features)");
+    app.add_option("--detection_threshold", o.detection_threshold, "xfeat/liftfeat: heatmap threshold of a keypoint (default per features)");
     app.add_option("--max_frames", o.max_frames, "Maximum number of IMU samples to process");
     app.add_flag("--save_results", o.save_results, "Save results, trajectories and the Rerun recording");
     app.add_flag("--no_viewer", o.no_viewer, "Do not stream to Rerun");
     app.add_flag("--only_imu", o.only_imu, "Propagate with the IMU only (diagnostics)");
     app.add_flag("--loop_closure", o.loop_closure, "Enable loop closure on keyframes");
     app.add_flag("--coreml", o.coreml, "Run XFeat with CoreML (Apple GPU / Neural Engine)");
-    app.add_option("--top_k", o.top_k, "XFeat keypoints per image");
+    app.add_option("--top_k", o.top_k, "Keypoints per image");
     app.add_option("--sigma_image", o.sigma_image, "Standard deviation of a keypoint measurement [px]");
     app.add_option("--max_triangulation_error", o.max_triangulation_error, "Maximum RMS reprojection error of a triangulated feature [px]");
     app.add_option("--zupt_max_disparity", o.zupt_max_disparity, "Zero-velocity update below this median feature displacement [px]");
@@ -90,6 +100,7 @@ int main(int argc, char** argv) {
     app.add_option("--lc_pnp_threshold", o.loop.pnp_threshold, "Loop closure: reprojection error of a PnP inlier [px]");
     app.add_option("--lc_recent_excluded", o.loop.recent_keyframes_excluded, "Loop closure: candidates must be older than this many keyframes");
     CLI11_PARSE(app, argc, argv);
+    o.loop_descriptor_similarity_set = app.count("--lc_descriptor_similarity") > 0;
 
     //* Sequence
     Sequence sequence = loadEuroc(o.data, o.sequence);
@@ -116,7 +127,14 @@ int main(int argc, char** argv) {
     p.estimate_initial_gyroscope_bias = true;
     p.initial_covariance_diagonal << Vec3::Constant(o.init_sigma_theta * o.init_sigma_theta), Vec3::Constant(0.005 * 0.005),
         Vec3::Constant(0.01 * 0.01), Vec3::Constant(o.init_sigma_ba * o.init_sigma_ba), Vec3::Zero();
-    p.min_cosine_similarity = 0.95;
+    //* Matching thresholds per descriptor (tracking tuned on EuRoC V1_01-03 without loop closure): cosine similarity of the normalized descriptors (for binary descriptors
+    //* 1 - 2 Hamming / bits) for frame-to-frame tracking and for loop closure, where the viewpoint change is larger
+    struct Defaults { double tracking, loop; float detection; };
+    const std::map<std::string, Defaults> defaults{
+        {"xfeat", {0.95, 0.7, 0.05f}}, {"liftfeat", {0.95, 0.7, 0.1f}}, {"orb", {0.5, 0.5, 0.0f}}, {"akaze", {0.9, 0.7, 0.0f}}, {"sift", {0.97, 0.85, 0.0f}}};
+    const Defaults& d = defaults.at(o.features);
+    p.min_cosine_similarity = o.min_cosine_similarity > 0 ? o.min_cosine_similarity : d.tracking;
+    if (!o.loop_descriptor_similarity_set) o.loop.min_descriptor_similarity = d.loop;
     p.use_parallax = true;
     p.min_parallax = o.min_parallax;
     p.epipolar_rejection_threshold = o.epipolar_threshold;
@@ -130,10 +148,21 @@ int main(int argc, char** argv) {
     p.update_features_on_prune = !o.no_update_on_prune;
     VioSystem system(p, o.loop, o.loop_closure);
 
-    XFeatExtractor::Options extractor_options;
-    extractor_options.top_k = o.top_k;
-    extractor_options.use_coreml = o.coreml;
-    const XFeatExtractor extractor(o.model, extractor_options);
+    std::unique_ptr<FeatureExtractor> extractor;
+    if (o.features == "xfeat" || o.features == "liftfeat") {
+        XFeatExtractor::Options extractor_options;
+        extractor_options.top_k = o.top_k;
+        extractor_options.use_coreml = o.coreml;
+        extractor_options.detection_threshold = o.detection_threshold > 0 ? o.detection_threshold : d.detection;
+        extractor = std::make_unique<XFeatExtractor>(o.model.empty() ? "models/" + o.features + ".onnx" : o.model, extractor_options);
+    } else {
+        OpenCvExtractor::Options extractor_options;
+        extractor_options.type = o.features == "orb" ? OpenCvExtractor::Type::Orb : o.features == "sift" ? OpenCvExtractor::Type::Sift : OpenCvExtractor::Type::Akaze;
+        extractor_options.top_k = o.top_k;
+        extractor = std::make_unique<OpenCvExtractor>(extractor_options);
+    }
+    std::printf("Features: %s, %d keypoints, matching similarity %.2f (loop closure %.2f)\n", o.features.c_str(), o.top_k,
+                p.min_cosine_similarity, o.loop.min_descriptor_similarity);
 
     const std::string results_folder = o.data + "/" + o.source + "/" + o.sequence + "/results";
     if (o.save_results) std::filesystem::create_directories(results_folder);
@@ -144,7 +173,7 @@ int main(int argc, char** argv) {
     auto load = [&](std::size_t index) {
         cv::Mat image = sequence.loadImage(index), gray;
         cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
-        return std::make_pair(image, extractor.extract(gray));
+        return std::make_pair(image, extractor->extract(gray));
     };
     std::size_t camera_index = 1;  // the first image only marks the end of the static initialization window
     std::future<std::pair<cv::Mat, FrameFeatures>> next_frame = std::async(std::launch::async, load, camera_index);

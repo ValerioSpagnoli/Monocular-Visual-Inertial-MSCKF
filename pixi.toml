@@ -47,6 +47,7 @@ pytorch-cpu = ">=2.0"
 
 [feature.export.tasks]
 export-xfeat = "python tools/export_xfeat_onnx.py"
+export-liftfeat = "python tools/export_liftfeat_onnx.py"
 
 [environments]
 default = { solve-group = "default" }

@@ -9,7 +9,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # backend/   filter (MSCKF, IMU, geometry, loop closure): Eigen only, builds unchanged with the Android NDK
-# frontend/  feature extraction (XFeat): OpenCV and ONNX Runtime, available on desktop and Android
+# frontend/  feature extraction (XFeat, LiftFeat, ORB, SIFT, AKAZE): OpenCV and ONNX Runtime, desktop and Android
 # app/       desktop application msckf_run (EuRoC, evaluation, Rerun): desktop only
 option(MSCKF_BUILD_FRONTEND "Build the XFeat front-end (OpenCV, ONNX Runtime)" ON)
 option(MSCKF_BUILD_APP "Build the desktop application msckf_run (requires the front-end)" ON)
@@ -34,9 +34,15 @@ target_compile_options(msckf_backend PRIVATE ${MSCKF_WARNINGS})
 
 #* Frontend
 if(MSCKF_BUILD_FRONTEND)
+  # ORB, SIFT and AKAZE are in features2d up to OpenCV 4 (e.g. the Android SDK); in OpenCV 5 AKAZE is in xfeatures2d
   find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
+  if(OpenCV_VERSION VERSION_GREATER_EQUAL 5)
+    find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs features xfeatures2d)
+  else()
+    find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs features2d)
+  endif()
   find_package(onnxruntime REQUIRED)
-  add_library(msckf_frontend STATIC frontend/src/xfeat.cpp)
+  add_library(msckf_frontend STATIC frontend/src/xfeat.cpp frontend/src/opencv_features.cpp)
   target_include_directories(msckf_frontend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/frontend/include)
   target_link_libraries(msckf_frontend PUBLIC msckf_backend ${OpenCV_LIBS} onnxruntime::onnxruntime)
   target_compile_options(msckf_frontend PRIVATE ${MSCKF_WARNINGS})
@@ -62,7 +68,7 @@ if(MSCKF_BUILD_TESTS)
   add_test(NAME msckf_backend_tests COMMAND msckf_backend_tests)
 
   if(MSCKF_BUILD_FRONTEND)
-    add_executable(msckf_frontend_tests frontend/tests/test_xfeat.cpp)
+    add_executable(msckf_frontend_tests frontend/tests/test_xfeat.cpp frontend/tests/test_opencv_features.cpp)
     target_link_libraries(msckf_frontend_tests PRIVATE msckf_frontend Catch2::Catch2WithMain)
     target_compile_definitions(msckf_frontend_tests PRIVATE MSCKF_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/frontend/tests/data"
                                                             MSCKF_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/models/xfeat.onnx")

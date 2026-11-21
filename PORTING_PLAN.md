@@ -213,6 +213,20 @@ Da fare per la loop closure: descrittore globale discriminante (oggi la media de
 
 ---
 
+### Confronto delle feature (`--features`)
+EuRoC V1_01–03, 300 keypoint, soglia di matching tarata per ciascuna senza loop closure; media delle tre sequenze:
+
+| Feature | ATE | ATE con loop closure | Frequenza camera (Mac) |
+|---|---|---|---|
+| XFeat | 0,268 m | 0,191 m | 43 Hz |
+| SIFT (RootSIFT) | 0,242 m | 0,199 m | 25 Hz |
+| ORB | 0,268 m | 0,239 m | 98 Hz |
+| AKAZE | 0,268 m | 0,205 m | 30 Hz |
+
+L'odometria è alla pari (differenze dentro la variabilità del filtro, ~8 %): la verifica epipolare con le pose del filtro compensa descrittori meno robusti. ORB è 2,3 volte più veloce di XFeat ed è il candidato per lo smartphone; perde nella loop closure (soglia non tarata, descrittore meno invariante al punto di vista). LiftFeat (ICRA 2025): esportazione pronta, da valutare.
+
+---
+
 ## Fase 4 — Esecuzione su smartphone
 
 ### 4.0 Decisioni da prendere

@@ -1,3 +1,6 @@
 [submodule "src/accelerated_features"]
 	path = third_party/accelerated_features
 	url = git@github.com:verlab/accelerated_features.git
+[submodule "third_party/LiftFeat"]
+	path = third_party/LiftFeat
+	url = https://github.com/lyp-deeplearning/LiftFeat.git
