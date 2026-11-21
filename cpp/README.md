@@ -5,8 +5,8 @@ so the same sources build on desktop and with the Android NDK.
 
 The core covers everything after feature extraction: IMU propagation with the observability constraint, camera
 clones, descriptor matching and epipolar/homography checks, Gauss-Newton triangulation, the null-space MSCKF update
-with chi-square gating, zero-velocity updates and clone pruning. Feature extraction (XFeat) stays outside: on the
-desktop it runs in PyTorch, on the phone it will run in an on-device runtime (e.g. ONNX Runtime or TFLite) and pass
+with chi-square gating, zero-velocity updates, clone pruning and loop closure. Feature extraction (XFeat) stays
+outside the core: the front-end (`cpp/frontend`) runs it with ONNX Runtime, also available on Android, and passes
 keypoints, descriptors and scores to the core.
 
 ## API
