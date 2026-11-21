@@ -332,3 +332,17 @@ def test_used_observations_are_discarded():
     assert feature.camera_indices == [3] and feature.tracked_for_n_frames == 1
     assert len(feature.keypoints) == len(feature.descriptors) == len(feature.scores) == len(feature.lines) == 1
     np.testing.assert_array_equal(feature.descriptors[0], np.full(4, 3.0))
+
+
+def test_null_space_projection():
+    """The projection removes the feature (A^T H_f = 0) with an orthonormal basis, so the noise stays sigma^2 I."""
+    H_f = rng.normal(size=(10, 3))
+    H_x = rng.normal(size=(10, 27))
+    r = rng.normal(size=(10, 1))
+    r_o, H_o = MSCKF.project_on_nullspace(None, H_f, r, H_x)
+    assert r_o.shape == (7, 1) and H_o.shape == (7, 27)
+    # Recover A from H_o = A^T H_x with H_x of full row rank
+    A_T = H_o @ np.linalg.pinv(H_x)
+    np.testing.assert_allclose(A_T @ H_f, 0, atol=1e-9)
+    np.testing.assert_allclose(A_T @ A_T.T, np.eye(7), atol=1e-9)
+    np.testing.assert_allclose(r_o, A_T @ r, atol=1e-9)

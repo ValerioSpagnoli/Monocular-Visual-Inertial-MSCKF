@@ -4,7 +4,7 @@ from src.msckf.FeatureExtractor import *
 from src.utils.geometry import *
 from src.utils.visualization_utils import *
 
-from scipy.linalg import null_space
+from functools import lru_cache
 from scipy.stats import chi2
 
 from dataclasses import dataclass, field
@@ -76,6 +76,11 @@ max_number_of_camera_states: {self.max_number_of_camera_states}\n \
 device: {self.device}'
                             
     
+
+@lru_cache(maxsize=None)
+def chi2_critical_value(dof: int, alpha: float = 0.95) -> float:
+    return float(chi2.ppf(alpha, dof))
+
 
 def fundamental_matrix(T_C1_C2: Isometry3D, invK: np.ndarray) -> np.ndarray:
     """F = K^-T [t]x R K^-1 for T_C1_C2 (pose of camera 2 in camera 1): x1^T F x2 = 0 for pixels of the same point."""
@@ -566,19 +571,20 @@ class MSCKF:
         return rj_o, Hj_o
         
     def project_on_nullspace(self, Hj_f: np.ndarray, rj: np.ndarray, Hj_x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        A = null_space(Hj_f.T) # left null space of Hj_f: 2*Mj x 2*Mj-rank(Hj_f)
+        # Left null space of Hj_f (2*Mj x 3): the last 2*Mj-3 columns of a complete QR are orthogonal to its columns
+        # (still true if Hj_f is rank deficient, at the price of one discarded dimension). Cheaper than an SVD.
+        Q, _ = np.linalg.qr(Hj_f, mode='complete')
+        A = Q[:, Hj_f.shape[1]:]
         rj_o = A.T @ rj   # (2*Mj-3 x 2*Mj) x (2*Mj x 1)     = 2*Mj-3 x 1  
         Hj_o = A.T @ Hj_x # (2*Mj-3 x 2*Mj) x (2*Mj x 15+6N) = 2*Mj-3 x 15+6N
                 
         return rj_o, Hj_o
     
-    def gating_test(self, r: np.ndarray, H: np.ndarray) -> bool:        
-        S_inv = np.linalg.inv(H @ self.state.covariance @ H.T + self.sigma_image**2 * np.eye(H.shape[0]))
-        gamma = (r.T @ S_inv @ r).flatten()[0]
-        dof = r.shape[0]
-        alpha = 0.95
-        critical_value = chi2.ppf(alpha, dof).flatten()[0]
-            
+    def gating_test(self, r: np.ndarray, H: np.ndarray) -> bool:
+        S = H @ self.state.covariance @ H.T + self.sigma_image**2 * np.eye(H.shape[0])
+        gamma = (r.T @ np.linalg.solve(S, r)).item()
+        critical_value = chi2_critical_value(r.shape[0])
+        
         return gamma <= critical_value # True if the test is passed, False otherwise
 
     def update(self, features: Dict[int, Feature]):                       
