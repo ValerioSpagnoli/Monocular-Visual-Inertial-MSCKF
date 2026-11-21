@@ -182,6 +182,30 @@ Sequenze complete: V1_02 0,77, TartanAir P001 0,80. Risultati invariati (differe
 
 ---
 
+## Fase 3b — Progetto solo C++ (completata)
+
+Il codice Python è stato rimosso (`44d54d2`); resta su `main` e nella cronologia. Struttura attuale:
+- **Core** (`cpp/include/msckf`, `cpp/src`, solo Eigen): MSCKF, triangolazione Gauss-Newton, ZUPT, loop closure con grafo delle pose a 4 gradi di libertà, `VioSystem`. Cross-compila con l'NDK (`pixi run build-android`).
+- **Front-end** (`cpp/frontend`, OpenCV + ONNX Runtime): XFeat da `models/xfeat.onnx`, stessi keypoint di PyTorch (descrittori entro 5e-6), 17 ms per immagine su CPU.
+- **Applicazione** (`cpp/app`): `msckf_run` (dataset EuRoC/TartanAir/PeringLab, generatore IMU, valutazione, Rerun). `pixi run main`, `pixi run benchmark`, `pixi run test-cpp`.
+- Export di XFeat: ambiente separato `pixi run -e export export-xfeat`.
+- Non portata: la sorgente completamente sintetica (`synthetic_generator.py`).
+
+Risultati (`bc79637`, ATE RMSE odometria → con loop closure, NEES posizione / orientazione, fattore di tempo reale):
+
+| Sequenza | ATE | Con loop closure | NEES | Tempo reale |
+|---|---|---|---|---|
+| V1_01_easy | 0,310 m | 0,299 m | 3,8 / 265 | 0,44 |
+| V1_02_medium | 0,205 m | 0,195 m | 4,2 / 2,8 | 0,47 |
+| V1_03_difficult | 0,290 m | 0,286 m | 7,2 / 8,9 | 0,46 |
+| P001 (medio) | 0,134 m | — | 1,4 / 1,6 | 0,42 |
+
+Altre correzioni della fase: covarianza iniziale dell'inclinazione dalla stima della gravità (prima il NEES con sola IMU era 9–52 a seconda del seme, ora 0,6–4,5); rumore IMU reale ×10 sul datasheet; bug dell'omografia (direzione e confronti invertiti).
+
+Da fare per la loop closure: descrittore globale discriminante (oggi la media dei descrittori XFeat ha somiglianza ~0,99 tra tutte le immagini), taratura delle incertezze del grafo, sequenze con traiettorie più lunghe (EuRoC Machine Hall).
+
+---
+
 ## Fase 4 — Esecuzione su smartphone
 
 ### 4.0 Decisioni da prendere
