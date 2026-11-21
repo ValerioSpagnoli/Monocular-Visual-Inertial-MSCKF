@@ -63,6 +63,10 @@ parser_args.add_argument('--only_imu', action='store_true',
                         help='Propagate with the IMU only, without visual updates (diagnostics)')
 parser_args.add_argument('--no_viewer', action='store_true',
                         help='Do not stream to Rerun (faster, for evaluations)')
+parser_args.add_argument('--imu_noise_scale', type=float, default=10.0,
+                        help='Real datasets: multiplier of the IMU white-noise densities of sensor.yaml')
+parser_args.add_argument('--imu_walk_scale', type=float, default=1.0,
+                        help='Real datasets: multiplier of the IMU bias random-walk densities of sensor.yaml')
 parser_args.add_argument('--min_parallax', type=float, default=45.0,
                         help='Parallax between first and last observation that triggers the use of a tracked feature [deg]')
 parser_args.add_argument('--max_track_length', type=int, default=10,
@@ -149,10 +153,11 @@ elif noise_level == 'low':
     gyroscope_random_walk = gyroscope_random_walks[2]
     
 elif noise_level == 'real':
-    accelerometer_noise_density = euroc.accelerometer_noise_density
-    gyroscope_noise_density = euroc.gyroscope_noise_density
-    accelerometer_random_walk = euroc.accelerometer_random_walk
-    gyroscope_random_walk = euroc.gyroscope_random_walk
+    # Datasheet values usually underestimate the noise of a real IMU (vibrations, temperature, unmodeled effects)
+    accelerometer_noise_density = euroc.accelerometer_noise_density * args.imu_noise_scale
+    gyroscope_noise_density = euroc.gyroscope_noise_density * args.imu_noise_scale
+    accelerometer_random_walk = euroc.accelerometer_random_walk * args.imu_walk_scale
+    gyroscope_random_walk = euroc.gyroscope_random_walk * args.imu_walk_scale
 
 #* Gravity in the world frame (z up). Accelerometers, real and simulated, measure the specific force f = R^T (a - g)
 W_gravity = np.array([0, 0, -9.81])
