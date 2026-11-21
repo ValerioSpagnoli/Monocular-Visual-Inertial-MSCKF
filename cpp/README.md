@@ -1,6 +1,6 @@
 # MSCKF C++ core
 
-C++17 port of the filter in `src/msckf/MSCKF.py`, meant to run on Android. It depends only on Eigen (header-only),
+C++17 implementation of the filter (ported from the Python code of the thesis), meant to run on Android. It depends only on Eigen (header-only),
 so the same sources build on desktop and with the Android NDK.
 
 The core covers everything after feature extraction: IMU propagation with the observability constraint, camera
@@ -24,19 +24,23 @@ filter.addImage({keypoints, descriptors, scores}); // after the IMU sample at th
 
 filter.imu().T_W_I;   // current pose, also v_W_I, biases
 filter.covariance();  // [δθ, δbg, δv, δba, δp] of the IMU, then [δθ, δp] of each clone
+
+// With loop closure on keyframes:
+msckf::VioSystem system(parameters, msckf::LoopClosureParameters{}, /*enable_loop_closure=*/true);
+system.addImu(...); system.addImage(timestamp, features);
+system.correctedPose();  // odometry pose corrected with the 4-dof pose graph
 ```
 
 ## Build and test (desktop)
 
 ```bash
-pixi run build-cpp   # core, Catch2 tests and the Python module msckf_cpp in build/cpp
-pixi run test-cpp    # C++ unit tests
-pixi run test        # Python tests, including tests/test_cpp_parity.py (Python vs C++)
-pixi run main --source euroc --sequence V1_01_easy --backend cpp
+pixi run build-cpp   # core, front-end, msckf_run and the Catch2 tests in build/cpp
+pixi run test-cpp    # core tests (filter, geometry, loop closure) and application tests (XFeat vs PyTorch reference, datasets)
+pixi run main --source euroc --sequence V1_01_easy
 ```
 
-`tests/test_cpp_parity.py` runs both implementations on the same synthetic visual-inertial sequence: poses and
-covariance agree to about 1e-12. `benchmark.py -- --backend cpp` compares them on the datasets.
+The front-end (`cpp/frontend`, OpenCV and ONNX Runtime) and the application (`cpp/app`) are enabled by
+`MSCKF_BUILD_APP` (default ON on desktop).
 
 ## Android
 
