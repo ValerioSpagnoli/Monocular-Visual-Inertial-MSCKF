@@ -122,7 +122,10 @@ def test_full_filter_parity():
     # The filter must have done real work for the comparison to mean something
     assert len(python_filter.updated_feature_indices) + python_filter.number_of_residuals_discarded_for_gasting_test >= 0
     assert len(python_filter.triangulated_points) > 50
-    assert len(cpp_filter.triangulated_points()) == len(python_filter.triangulated_points)
+    # Same decisions (the C++ core drops the triangulated points of removed features, so compare the counters)
+    assert cpp_filter.gating_rejections == python_filter.number_of_residuals_discarded_for_gasting_test
+    assert cpp_filter.triangulation_rejections == python_filter.number_of_features_discarded_for_triangulation
+    assert cpp_filter.epipolar_rejections == python_filter.number_of_features_discarded_for_epipolar_test
 
     np.testing.assert_allclose(cpp_filter.p_W_I, python_filter.state.imu.T_W_Ii.t, atol=1e-6)
     np.testing.assert_allclose(cpp_filter.R_W_I, python_filter.state.imu.T_W_Ii.R, atol=1e-6)
