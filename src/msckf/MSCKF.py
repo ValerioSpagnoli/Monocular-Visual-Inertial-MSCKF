@@ -658,6 +658,20 @@ class MSCKF:
         delta_x = K @ r_n
                 
         self.correct(K, T_H, R_n, delta_x)
+        self.discard_used_observations([index for index in features.keys() if index in self.updated_feature_indices])
+    
+    def discard_used_observations(self, feature_indices: List[int]):
+        """
+        Each measurement must enter the EKF only once, otherwise its information is counted again at every update
+        and the filter becomes overconfident. Features still tracked after an update keep only their last observation
+        (so the track and its descriptor continue), and need to gather parallax again before the next update.
+        """
+        for index in feature_indices:
+            feature = self.features.get(index)
+            if feature is None or len(feature.camera_indices) <= 1: continue
+            for observations in (feature.keypoints, feature.descriptors, feature.scores, feature.camera_indices, feature.lines):
+                del observations[:-1]
+            feature.tracked_for_n_frames = 1
         
     def correct(self, K: np.ndarray, T_H: np.ndarray, R_n: np.ndarray, delta_x: np.ndarray):   
         I = np.eye(self.state.covariance.shape[0])

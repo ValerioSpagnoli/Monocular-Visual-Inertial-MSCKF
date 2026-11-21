@@ -68,6 +68,8 @@ Le fasi vanno svolte **in ordine**: ogni fase produce una baseline misurabile ch
 
 Per ogni bug: test che lo riproduce → fix → confronto con la baseline. Un commit per bug.
 
+**Nota metodologica:** il filtro è sensibile a perturbazioni minime (una rotazione iniziale diversa di 1e-16 sposta l'ATE di V1_01 a 30 s da 0,157 a 0,170 m) per via delle decisioni discrete (gating, test epipolare, pruning). Differenze sotto il ~10 % su una singola esecuzione non sono significative: le modifiche si valutano con `benchmark.py` su tutte le sequenze.
+
 Riferimento di valutazione: EuRoC **V1_01_easy, primi 6000 passi IMU (30 s, 8,25 m)** con `--no_viewer` (~50 s per run).
 
 | Commit | Correzione | ATE RMSE | Dentro 3σ |
@@ -109,12 +111,14 @@ Resta l'inclinazione su V1_01: il ground truth EuRoC dichiara b_a,y ≈ 0,55 m/s
 ### 2.1 Bug già individuati
 - [x] **Test epipolare**: oltre al valore assoluto mancante, verificava `x2ᵀE x1` invece di `x1ᵀE x2`, quindi non era nullo per le associazioni corrette. Ora è la distanza di Sampson in pixel (`--epipolar_threshold`).
 - [x] **Stato "null" (OC-EKF) in aliasing:** `correct()` crea oggetti nuovi invece di modificarli sul posto.
-- [ ] **Random walk dei bias non accumulato** (`photorealistic_generator.py`): alla misura si somma l'incremento `*_bias_noise` invece del bias accumulato. Inoltre il rumore va scalato con `dt` (densità continua → discreta: `σ_d = σ_c / sqrt(dt)` per il rumore bianco, `σ_c · sqrt(dt)` per il random walk). Rigenerare i dataset.
+- [x] **Random walk dei bias non accumulato** e rumore non discretizzato nel generatore (`9a068b1`), con test statistici.
 - [x] **`results.txt` scritto sempre** → ora solo con `--save_results`.
-- [ ] **NaN in `IMU.initialize`:** `axis` viene normalizzato prima del controllo `isclose(theta, 0/π)`.
+- [x] **NaN in `IMU.initialize`** e `R = −I` (non una rotazione) nel caso capovolto → `Rotation.align_vectors` (`aa7ff15`).
 - [x] **`time.sleep(0.005)` nel loop principale:** rimosso. Senza lo sleep il ciclo con la sola IMU gira a ~5600 Hz.
 - [x] **Sincronizzazione camera/IMU:** `imu_ts >= cam_ts` (fatto con il supporto EuRoC).
-- [ ] **Convenzione del segno della gravità** (emersa con EuRoC): uniformare generatore sintetico e integrazione alla convenzione fisica `f = Rᵀ(a − g)`.
+- [x] **Convenzione del segno della gravità**: tutto alla convenzione fisica `f = Rᵀ(a − g)` (`aa7ff15`).
+- [x] **Frame delle pose TartanAir**: sono nel frame NED della camera, non nel frame ottico; errore epipolare mediano 17–51 px → 0,5 px. P001 ATE (medio) 8,99 → 0,56 m (`6089b43`).
+- [x] **Riuso delle misure**: le feature ancora tracciate entravano nell'update a ogni frame con tutte le osservazioni passate. Ora dopo l'update tengono solo l'ultima osservazione. Impatto trascurabile in pratica: con `min_parallax = 45°` quasi tutte le feature entrano nell'update solo quando vengono perse.
 
 ### 2.2 Punti da verificare
 - [x] `sigma_image` in **coordinate normalizzate** → ora in pixel (`--sigma_image`, default 1 px).
@@ -128,7 +132,7 @@ Resta l'inclinazione su V1_01: il ground truth EuRoC dichiara b_a,y ≈ 0,55 m/s
 - [ ] `prune_poorest_camera_states` può rimuovere la camera appena clonata o quelle più recenti → escludere gli ultimi N cloni.
 - [ ] `Q = Φ G Qc Gᵀ Φᵀ dt`: è un'approssimazione; valutare l'integrazione trapezoidale.
 - [ ] Calcolo di RTE/ROE in `main.py`: il fallback `(1 if gt > 0 else 0)` è sempre 0 nel ramo `gt == 0`; lo "smoothing" degli outlier altera le metriche → riportare anche i valori grezzi.
-- [ ] `Isometry3D` con argomenti di default mutabili (`np.eye(3)` condiviso tra istanze) e `IMU.__init__` con default `Isometry3D(...)` condivisi.
+- [x] Argomenti di default mutabili in `Isometry3D`, `IMU`, `InverseDepthPoint` (`da8f085`).
 - [ ] Rimuovere il codice morto (`prune_camera_states`, la versione commentata di `prune_poorest_camera_states`, `match_frames`).
 
 **Criterio di uscita:** tutti i test verdi, NEES nei bound χ², metriche ≥ baseline v0 → salvare la **baseline v1**.

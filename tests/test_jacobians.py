@@ -313,3 +313,22 @@ def test_projected_jacobian_has_no_yaw_information():
         N[15 + 6*k: 18 + 6*k] = camera.T_W_Ci_null.R.T @ g
         N[18 + 6*k: 21 + 6*k] = -skew(camera.T_W_Ci_null.t) @ g
     np.testing.assert_allclose(H_o @ N, 0, atol=1e-8)
+
+
+def test_used_observations_are_discarded():
+    """After an update a still-tracked feature keeps only its last observation, so earlier measurements are not reused."""
+    T_W_C0 = random_pose()
+    poses = [T_W_C0 * Isometry3D(exp_so3(rng.normal(scale=0.05, size=3)), rng.normal(scale=0.3, size=3)) for _ in range(4)]
+    cameras = {k: Camera(K=K, width=640, height=480, T_W_Ci=T) for k, T in enumerate(poses)}
+    feature = feature_seen_by(cameras, point_in_front(T_W_C0))
+    feature.descriptors = [np.full(4, k, dtype=float) for k in range(4)]
+    feature.scores = [1.0] * 4
+    feature.lines = list(range(4))
+    feature.tracked_for_n_frames = 4
+    msckf = SimpleNamespace(features={7: feature})
+    
+    MSCKF.discard_used_observations(msckf, [7])
+    
+    assert feature.camera_indices == [3] and feature.tracked_for_n_frames == 1
+    assert len(feature.keypoints) == len(feature.descriptors) == len(feature.scores) == len(feature.lines) == 1
+    np.testing.assert_array_equal(feature.descriptors[0], np.full(4, 3.0))
