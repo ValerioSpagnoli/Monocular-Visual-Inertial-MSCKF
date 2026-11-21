@@ -31,6 +31,10 @@ class PhotorealisticGenerator():
         self.noisy_imu_file = self.root_folder + 'imu.csv'
 
         camera_info = pd.read_csv(f'{BASE_DATASET_PATH}/{source}/camera_info.csv')
+        # Pose of the frame used by the trajectory file in the IMU frame.
+        # TartanAir poses are given in the NED camera frame (x forward, y right, z down), which is taken as IMU frame;
+        # for the other sources the trajectory is the camera (optical) pose and camera_info.csv gives its rotation in the IMU frame.
+        self.trajectory_frame_is_imu = source == 'tartanair'
         self.T_W_C = np.eye(4)
         self.T_W_C[0:3, 0:3] = np.array([[camera_info.iloc[0]['R00'], camera_info.iloc[0]['R01'], camera_info.iloc[0]['R02']],
                                          [camera_info.iloc[0]['R10'], camera_info.iloc[0]['R11'], camera_info.iloc[0]['R12']],
@@ -71,7 +75,7 @@ class PhotorealisticGenerator():
         T_W_C0[0:3, 0:3] = quaternion2R([gt_trajectory.iloc[0]['qx'], gt_trajectory.iloc[0]['qy'], gt_trajectory.iloc[0]['qz'], gt_trajectory.iloc[0]['qw']])
         
         T_W_W0 = np.eye(4)
-        T_W_W0 = T_W_C0 @ np.linalg.inv(self.T_W_C)
+        T_W_W0 = T_W_C0 if self.trajectory_frame_is_imu else T_W_C0 @ np.linalg.inv(self.T_W_C)
 
         rows_list = []
         for i in range(3):
@@ -98,7 +102,7 @@ class PhotorealisticGenerator():
             T_W_Ci[0:3, 0:3] = quaternion2R([qx, qy, qz, qw])
             T_W_Ci[0:3, 3] = np.array([x, y, z])
             
-            T_W_Wi = T_W_Ci @ np.linalg.inv(self.T_W_C)
+            T_W_Wi = T_W_Ci if self.trajectory_frame_is_imu else T_W_Ci @ np.linalg.inv(self.T_W_C)
             T_W0_Wi = np.linalg.inv(T_W_W0) @ T_W_Wi
 
             new_row = {'timestamp': timestamp,
@@ -186,16 +190,18 @@ class PhotorealisticGenerator():
                                                         q1[0]*q2[3] - q1[1]*q2[2] + q1[2]*q2[1] - q1[3]*q2[0] ])
                 
                 
-                linear_acceleration_noise = self.accelerometer_noise_density * np.random.normal(0, 1, 3)
-                linear_acceleration_bias_noise = self.accelerometer_random_walk * np.random.normal(0, 1, 3)
-                gyroscope_noise = self.gyroscope_noise_density * np.random.normal(0, 1, 3)
-                gyroscope_bias_noise = self.gyroscope_random_walk * np.random.normal(0, 1, 3)
+                # Continuous-time densities -> per-sample values, matching the filter model (Q = Phi G Qc G^T Phi^T dt):
+                # white noise has std sigma / sqrt(dt), the bias random walk grows by sigma * sqrt(dt) per sample
+                linear_acceleration_noise = self.accelerometer_noise_density / np.sqrt(dt) * np.random.normal(0, 1, 3)
+                linear_acceleration_bias_noise = self.accelerometer_random_walk * np.sqrt(dt) * np.random.normal(0, 1, 3)
+                gyroscope_noise = self.gyroscope_noise_density / np.sqrt(dt) * np.random.normal(0, 1, 3)
+                gyroscope_bias_noise = self.gyroscope_random_walk * np.sqrt(dt) * np.random.normal(0, 1, 3)
                           
                 accelerometer_bias += linear_acceleration_bias_noise
-                linear_acceleration_noisy = linear_acceleration + linear_acceleration_bias_noise + linear_acceleration_noise
+                linear_acceleration_noisy = linear_acceleration + accelerometer_bias + linear_acceleration_noise
                 
                 gyroscope_bias += gyroscope_bias_noise
-                angular_velocity_noisy = angular_velocity + gyroscope_bias_noise + gyroscope_noise
+                angular_velocity_noisy = angular_velocity + gyroscope_bias + gyroscope_noise
                 
                 imu_rows_list.append({'timestamp': current_timestamp,
                                         'wx': angular_velocity[0], 'wy': angular_velocity[1], 'wz': angular_velocity[2],
