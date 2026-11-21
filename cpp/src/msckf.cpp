@@ -568,9 +568,27 @@ void Msckf::pruneCameraStates() {
     removeCameras(to_remove);
 }
 
+KeyframeObservations Msckf::currentObservations() const {
+    KeyframeObservations observations;
+    std::vector<Eigen::VectorXf> descriptors;
+    for (const auto& [id, feature] : features_) {
+        if (feature.camera_ids.empty() || feature.camera_ids.back() != imu_.id) continue;
+        observations.keypoints.push_back(feature.keypoints.back());
+        descriptors.push_back(feature.descriptors.back());
+        const auto point = triangulated_points_.find(id);
+        observations.points.push_back(point != triangulated_points_.end() ? std::optional<Vec3>(point->second) : std::nullopt);
+    }
+    if (!descriptors.empty()) {
+        observations.descriptors.resize(static_cast<Eigen::Index>(descriptors.size()), descriptors.front().size());
+        for (std::size_t k = 0; k < descriptors.size(); ++k) observations.descriptors.row(static_cast<Eigen::Index>(k)) = descriptors[k].transpose();
+    }
+    return observations;
+}
+
 void Msckf::removeFeatures(const std::vector<long long>& feature_ids) {
     for (long long id : feature_ids) {
         features_.erase(id);
+        triangulated_points_.erase(id);  // bounded memory on long trajectories
         last_measurement_.erase(id);
     }
     std::vector<long long> unused_cameras;
@@ -608,6 +626,7 @@ void Msckf::removeCameras(const std::vector<long long>& camera_ids) {
     }
     for (long long id : empty_features) {
         features_.erase(id);
+        triangulated_points_.erase(id);
         last_measurement_.erase(id);
     }
 }

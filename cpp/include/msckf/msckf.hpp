@@ -6,6 +6,7 @@
 
 #include "msckf/geometry.hpp"
 #include "msckf/imu.hpp"
+#include "msckf/loop_closure.hpp"
 #include "msckf/math.hpp"
 
 namespace msckf {
@@ -96,6 +97,9 @@ public:
     const std::vector<long long>& updatedFeatureIds() const { return updated_feature_ids_; }
     const std::vector<long long>& gatedFeatureIds() const { return gated_feature_ids_; }
     const std::map<long long, Vec3>& triangulatedPoints() const { return triangulated_points_; }
+
+    /// Keypoints, descriptors and (if triangulated) world points of the features observed in the last image.
+    KeyframeObservations currentObservations() const;
 
     // Counters
     long long epipolarRejections() const { return epipolar_rejections_; }

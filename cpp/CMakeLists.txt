@@ -19,6 +19,10 @@ add_library(msckf_core STATIC
   src/imu.cpp
   src/geometry.cpp
   src/msckf.cpp
+  src/pnp.cpp
+  src/pose_graph.cpp
+  src/loop_closure.cpp
+  src/vio_system.cpp
 )
 target_include_directories(msckf_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(msckf_core PUBLIC Eigen3::Eigen)
@@ -33,7 +37,7 @@ endif()
 
 if(MSCKF_BUILD_TESTS)
   find_package(Catch2 3 REQUIRED)
-  add_executable(msckf_tests tests/test_core.cpp)
+  add_executable(msckf_tests tests/test_core.cpp tests/test_loop_closure.cpp)
   target_link_libraries(msckf_tests PRIVATE msckf_core Catch2::Catch2WithMain)
   enable_testing()
   add_test(NAME msckf_tests COMMAND msckf_tests)
