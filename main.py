@@ -54,6 +54,8 @@ parser_args.add_argument('--init_sigma_ba', type=float, default=0.5,
                         help='Initial accelerometer bias standard deviation [m/s^2] (real datasets)')
 parser_args.add_argument('--epipolar_threshold', type=float, default=10.0,
                         help='Sampson distance [px] above which a match is rejected')
+parser_args.add_argument('--only_imu', action='store_true',
+                        help='Propagate with the IMU only, without visual updates (diagnostics)')
 parser_args.add_argument('--no_viewer', action='store_true',
                         help='Do not stream to Rerun (faster, for evaluations)')
 parser_args.add_argument('--device', type=str, default='auto',
@@ -185,7 +187,7 @@ msckf_parameters = MSCKFParameters(
     sigma_image = args.sigma_image, # [px]
     
     #* IMU parameters
-    only_imu = False,
+    only_imu = args.only_imu,
     accelerometer_noise_density=accelerometer_noise_density,
     gyroscope_noise_density=gyroscope_noise_density,
     accelerometer_random_walk=accelerometer_random_walk,

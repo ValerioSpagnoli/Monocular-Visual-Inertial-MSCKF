@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import tqdm as tqdm
 import os
+from scipy.interpolate import PchipInterpolator
 from scipy.spatial.transform import Slerp
 from src.utils.geometry import *
 
@@ -45,6 +46,7 @@ class PhotorealisticGenerator():
         self.accelerometer_random_walk = accelerometer_random_walk
         self.gyroscope_random_walk = gyroscope_random_walk
         self.W_gravity = np.array([0, 0, -9.81])
+        self.imu_samples_per_frame = 9
             
     def process_data(self):
         #* Process Camera data
@@ -114,118 +116,60 @@ class PhotorealisticGenerator():
         gt_trajectory_transforms = pd.DataFrame(rows_list)
         
 
-        trajectory_rows_list = []
-        imu_rows_list = []
-        imu_noisy_rows_list = []
-                    
-        first_row = gt_trajectory_transforms.iloc[0]
-        first_timestamp = first_row['timestamp']
-        first_position = np.array([first_row['T03'], first_row['T13'], first_row['T23']])
-        first_rotation = np.array([[first_row['T00'], first_row['T01'], first_row['T02']],
-                                   [first_row['T10'], first_row['T11'], first_row['T12']],
-                                   [first_row['T20'], first_row['T21'], first_row['T22']]])
+        #* Smooth trajectory through the keyframes, sampled at the IMU rate (9 samples per camera interval)
+        key_timestamps = gt_trajectory_transforms['timestamp'].values
+        key_positions = gt_trajectory_transforms[['T03', 'T13', 'T23']].values
+        key_rotations = gt_trajectory_transforms[['T00', 'T01', 'T02', 'T10', 'T11', 'T12', 'T20', 'T21', 'T22']].values.reshape(-1, 3, 3)
         
-        trajectory_rows_list.append({'timestamp': first_timestamp,
-                                    'T00': first_rotation[0, 0], 'T01': first_rotation[0, 1], 'T02': first_rotation[0, 2], 'T03': first_position[0],
-                                    'T10': first_rotation[1, 0], 'T11': first_rotation[1, 1], 'T12': first_rotation[1, 2], 'T13': first_position[1],
-                                    'T20': first_rotation[2, 0], 'T21': first_rotation[2, 1], 'T22': first_rotation[2, 2], 'T23': first_position[2]})
+        timestamps = np.concatenate([np.linspace(t0, t1, self.imu_samples_per_frame + 1)[:-1] for t0, t1 in zip(key_timestamps[:-1], key_timestamps[1:])]
+                                    + [key_timestamps[-1:]])
+        # PCHIP (C1, no overshoot) keeps the static initial segment exactly static, which the gravity initialization needs:
+        # a cubic spline rings there because TartanAir sequences start already moving. Rotations use slerp (constant
+        # angular velocity between keyframes).
+        position_spline = PchipInterpolator(key_timestamps, key_positions)
+        rotation_spline = Slerp(key_timestamps, scipyR.from_matrix(key_rotations))
+        velocities = position_spline.derivative()(timestamps)
+        rotations = rotation_spline(timestamps).as_matrix()
         
-        imu_rows_list.append({'timestamp': first_timestamp, 
-                                'wx': 0, 'wy': 0, 'wz': 0,
-                                'ax': 0, 'ay': 0, 'az': 0})
+        #* Noise-free IMU measurements that the filter integration reproduces exactly (IMU.integrate):
+        #* R_{k+1} = R_k exp(w_k dt), p_{k+1} = p_k + v_k dt + a_k dt^2 / 2, v_{k+1} = v_k + a_k dt, a_k = R_k f_k + g.
+        #* Velocities are those of the spline and a_k = (v_k+1 - v_k) / dt; the ground-truth positions are the ones this
+        #* scheme reproduces (trapezoidal rule), which stay within a few millimeters of the spline.
+        #* The measurement driving the interval [t_k, t_k+1] is stored at t_k+1, as consumed by MSCKF.process_imu.
+        angular_velocities = np.zeros((len(timestamps), 3))
+        specific_forces = np.zeros((len(timestamps), 3))
+        positions = np.zeros((len(timestamps), 3))
+        positions[0] = position_spline(timestamps[0])
+        for k in range(len(timestamps) - 1):
+            dt = timestamps[k + 1] - timestamps[k]
+            angular_velocities[k + 1] = scipyR.from_matrix(rotations[k].T @ rotations[k + 1]).as_rotvec() / dt
+            acceleration = (velocities[k + 1] - velocities[k]) / dt
+            positions[k + 1] = positions[k] + 0.5 * (velocities[k] + velocities[k + 1]) * dt
+            specific_forces[k + 1] = rotations[k].T @ (acceleration - self.W_gravity)
         
-        imu_noisy_rows_list.append({'timestamp': first_timestamp,
-                                    'wx': 0, 'wy': 0, 'wz': 0,
-                                    'ax': 0, 'ay': 0, 'az': 0})
-        
-        prev_timestamp = first_timestamp
-        prev_position = first_position
-        prev_rotation = first_rotation
-        prev_velocity = np.zeros(3)
-        
+        #* Noisy measurements: white noise and accumulated bias random walk.
+        #* Continuous-time densities -> per-sample values, matching the filter model (Q = Phi G Qc G^T Phi^T dt):
+        #* white noise has std sigma / sqrt(dt), the bias random walk grows by sigma * sqrt(dt) per sample
+        noisy_angular_velocities = angular_velocities.copy()
+        noisy_specific_forces = specific_forces.copy()
         accelerometer_bias = np.zeros(3)
         gyroscope_bias = np.zeros(3)
+        for k in range(1, len(timestamps)):
+            dt = timestamps[k] - timestamps[k - 1]
+            accelerometer_bias += self.accelerometer_random_walk * np.sqrt(dt) * np.random.normal(0, 1, 3)
+            gyroscope_bias += self.gyroscope_random_walk * np.sqrt(dt) * np.random.normal(0, 1, 3)
+            noisy_specific_forces[k] += accelerometer_bias + self.accelerometer_noise_density / np.sqrt(dt) * np.random.normal(0, 1, 3)
+            noisy_angular_velocities[k] += gyroscope_bias + self.gyroscope_noise_density / np.sqrt(dt) * np.random.normal(0, 1, 3)
         
-        for i in range(1, len(gt_trajectory_transforms)):
-                        
-            current_row = gt_trajectory_transforms.iloc[i]
-            current_timestamp = current_row['timestamp']
-            current_position = np.array([current_row['T03'], current_row['T13'], current_row['T23']])
-            current_rotation = np.array([[current_row['T00'], current_row['T01'], current_row['T02']],
-                                         [current_row['T10'], current_row['T11'], current_row['T12']],
-                                         [current_row['T20'], current_row['T21'], current_row['T22']]])
-            
-            t = np.linspace(0, 1, 10)
-            interpolated_timestamps = (np.outer(1 - t, prev_timestamp) + np.outer(t, current_timestamp)).flatten()
-            
-            interpolated_positions = np.outer(1 - t, prev_position) + np.outer(t, current_position)
-                           
-            slerp = Slerp([0, 1], scipyR.from_matrix([prev_rotation, current_rotation]))
-            interpolated_rotations = slerp(t).as_matrix()
-            
-            prev_position = interpolated_positions[0]
-            prev_rotation = interpolated_rotations[0]
-            prev_timestamp = interpolated_timestamps[0]
-            
-            for j in range(1, len(t)):
-                current_position = interpolated_positions[j]
-                current_rotation = interpolated_rotations[j]
-                current_timestamp = interpolated_timestamps[j]
-                
-                dt = current_timestamp - prev_timestamp
-                
-                current_velocity = (current_position - prev_position) / dt
-                linear_acceleration = (current_velocity - prev_velocity) / dt
-                linear_acceleration = prev_rotation.T @ (linear_acceleration - self.W_gravity) # specific force f = R^T (a - g)
-                
-                q_prev = R2quaternion(prev_rotation) # x, y, z, w
-                q_current = R2quaternion(current_rotation) # x, y, z, w
-                if np.dot(q_prev, q_current) < 0:
-                    q_current = -q_current
-                    
-                q1 = np.array([q_prev[3], q_prev[0], q_prev[1], q_prev[2]]) # w, x, y, z
-                q2 = np.array([q_current[3], q_current[0], q_current[1], q_current[2]]) # w, x, y, z
-                angular_velocity = (2 / dt) * np.array([q1[0]*q2[1] - q1[1]*q2[0] - q1[2]*q2[3] + q1[3]*q2[2],
-                                                        q1[0]*q2[2] + q1[1]*q2[3] - q1[2]*q2[0] - q1[3]*q2[1],
-                                                        q1[0]*q2[3] - q1[1]*q2[2] + q1[2]*q2[1] - q1[3]*q2[0] ])
-                
-                
-                # Continuous-time densities -> per-sample values, matching the filter model (Q = Phi G Qc G^T Phi^T dt):
-                # white noise has std sigma / sqrt(dt), the bias random walk grows by sigma * sqrt(dt) per sample
-                linear_acceleration_noise = self.accelerometer_noise_density / np.sqrt(dt) * np.random.normal(0, 1, 3)
-                linear_acceleration_bias_noise = self.accelerometer_random_walk * np.sqrt(dt) * np.random.normal(0, 1, 3)
-                gyroscope_noise = self.gyroscope_noise_density / np.sqrt(dt) * np.random.normal(0, 1, 3)
-                gyroscope_bias_noise = self.gyroscope_random_walk * np.sqrt(dt) * np.random.normal(0, 1, 3)
-                          
-                accelerometer_bias += linear_acceleration_bias_noise
-                linear_acceleration_noisy = linear_acceleration + accelerometer_bias + linear_acceleration_noise
-                
-                gyroscope_bias += gyroscope_bias_noise
-                angular_velocity_noisy = angular_velocity + gyroscope_bias + gyroscope_noise
-                
-                imu_rows_list.append({'timestamp': current_timestamp,
-                                        'wx': angular_velocity[0], 'wy': angular_velocity[1], 'wz': angular_velocity[2],
-                                        'ax': linear_acceleration[0], 'ay': linear_acceleration[1], 'az': linear_acceleration[2]})
-                
-                imu_noisy_rows_list.append({'timestamp': current_timestamp,
-                                            'wx': angular_velocity_noisy[0], 'wy': angular_velocity_noisy[1], 'wz': angular_velocity_noisy[2],
-                                            'ax': linear_acceleration_noisy[0], 'ay': linear_acceleration_noisy[1], 'az': linear_acceleration_noisy[2]})
-                
-                trajectory_rows_list.append({'timestamp': current_timestamp,
-                                            'T00': current_rotation[0, 0], 'T01': current_rotation[0, 1], 'T02': current_rotation[0, 2], 'T03': current_position[0],
-                                            'T10': current_rotation[1, 0], 'T11': current_rotation[1, 1], 'T12': current_rotation[1, 2], 'T13': current_position[1],
-                                            'T20': current_rotation[2, 0], 'T21': current_rotation[2, 1], 'T22': current_rotation[2, 2], 'T23': current_position[2]})
-                                
-                prev_velocity = current_velocity
-                prev_position = current_position
-                prev_rotation = current_rotation
-                prev_timestamp = current_timestamp
-            
-        gt_imu = pd.DataFrame(imu_rows_list)
-        gt_imu.to_csv(f'{self.gt_imu_file}', index=False)
+        def imu_table(w, f):
+            return pd.DataFrame({'timestamp': timestamps, 'wx': w[:, 0], 'wy': w[:, 1], 'wz': w[:, 2], 'ax': f[:, 0], 'ay': f[:, 1], 'az': f[:, 2]})
         
-        gt_trajectory_transforms = pd.DataFrame(trajectory_rows_list)
-        gt_trajectory_transforms.to_csv(f'{self.root_folder}/transforms_gt.csv', index=False)
+        imu_table(angular_velocities, specific_forces).to_csv(f'{self.gt_imu_file}', index=False)
+        imu_table(noisy_angular_velocities, noisy_specific_forces).to_csv(f'{self.noisy_imu_file}', index=False)
         
-        noisy_imu = pd.DataFrame(imu_noisy_rows_list)
-        noisy_imu.to_csv(f'{self.noisy_imu_file}', index=False)
+        trajectory = {'timestamp': timestamps}
+        for r in range(3):
+            for c in range(3): trajectory[f'T{r}{c}'] = rotations[:, r, c]
+            trajectory[f'T{r}3'] = positions[:, r]
+        pd.DataFrame(trajectory)[['timestamp', 'T00', 'T01', 'T02', 'T03', 'T10', 'T11', 'T12', 'T13', 'T20', 'T21', 'T22', 'T23']] \
+            .to_csv(f'{self.root_folder}/transforms_gt.csv', index=False)
