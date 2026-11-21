@@ -36,12 +36,6 @@ double sampsonDistance(const Mat3& F, const Vec2& keypoint_1, const Vec2& keypoi
     return denominator > 0.0 ? std::abs(x1.dot(F_x2)) / std::sqrt(denominator) : 0.0;
 }
 
-double homographyTransferError(const Mat3& H, const Mat3& H_inv, const Vec2& keypoint_1, const Vec2& keypoint_2) {
-    const Vec3 x1 = H_inv * Vec3(keypoint_2.x(), keypoint_2.y(), 1.0);  // keypoint_2 transferred to image 1
-    const Vec3 x2 = H * Vec3(keypoint_1.x(), keypoint_1.y(), 1.0);      // keypoint_1 transferred to image 2
-    return ((keypoint_1 - x1.head<2>() / x1.z()).norm() + (keypoint_2 - x2.head<2>() / x2.z()).norm()) / 2.0;
-}
-
 TriangulationResult triangulateFeature(const std::vector<Pose>& poses, const std::vector<Vec2>& keypoints, const Mat3& invK,
                                        const Vec3& initial_point, int max_iterations) {
     const std::size_t n = poses.size();

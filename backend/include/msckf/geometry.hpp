@@ -26,10 +26,6 @@ Mat3 fundamentalMatrix(const Pose& T_C1_C2, const Mat3& invK);
 /// Sampson distance [px] of the match (keypoint_1, keypoint_2) from the constraint x1^T F x2 = 0.
 double sampsonDistance(const Mat3& F, const Vec2& keypoint_1, const Vec2& keypoint_2);
 
-/// Symmetric transfer error [px] of a match under the homography H (keypoint_2 ~ H keypoint_1), used for (almost)
-/// pure rotations where the epipolar geometry is undefined.
-double homographyTransferError(const Mat3& H, const Mat3& H_inv, const Vec2& keypoint_1, const Vec2& keypoint_2);
-
 struct TriangulationResult {
     std::optional<Vec3> point;  // empty if the point is not in front of every camera
     double rms = 0.0;           // RMS reprojection error in normalized coordinates

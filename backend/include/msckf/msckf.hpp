@@ -1,7 +1,6 @@
 #pragma once
 
 #include <map>
-#include <string>
 #include <vector>
 
 #include "msckf/geometry.hpp"
@@ -30,12 +29,9 @@ struct Parameters {
     bool initial_tilt_covariance_from_noise = true;
     Eigen::Matrix<double, 15, 1> initial_covariance_diagonal = Eigen::Matrix<double, 15, 1>::Zero();  // [δθ, δbg, δv, δba, δp]
 
-    // Features
-    double min_cosine_similarity = 0.82;
+    // Features (tracked by the frontend)
     bool use_parallax = true;
     double min_parallax = 20.0;                    // [deg]
-    double epipolar_rejection_threshold = 10.0;    // Sampson distance [px]
-    double homography_rejection_threshold = 5.0;   // [px]
     int min_number_of_frames_to_be_lost = 1;
     int min_number_of_frames_to_be_tracked = 5;
     int max_number_of_camera_states = 30;
@@ -51,11 +47,18 @@ struct Parameters {
     bool update_features_on_prune = true;          // use every feature seen by the pruned clones before removing them
 };
 
-/// Keypoints, descriptors and detection scores of one image (e.g. from XFeat).
-struct FrameFeatures {
-    std::vector<Vec2> keypoints;           // [px], in the undistorted image
-    Eigen::MatrixXf descriptors;           // one row per keypoint
-    std::vector<float> scores;
+/// Observation of a tracked feature in one image. The frontend associates the observations of the same feature over
+/// time through its id; the descriptor is only kept for the loop closure.
+struct FeatureObservation {
+    long long id = 0;
+    Vec2 keypoint = Vec2::Zero();  // [px], in the undistorted image
+    Eigen::VectorXf descriptor;
+    float score = 1.0f;
+};
+
+/// Output of the frontend for one image.
+struct TrackedFrame {
+    std::vector<FeatureObservation> observations;
 };
 
 struct CameraClone {
@@ -74,12 +77,8 @@ struct Feature {
     int lost_for_n_frames = 0;
 };
 
-struct RejectedMatch {
-    Vec2 keypoint;
-    std::string reason;  // "epipolar" or "homography"
-};
-
-/// Multi-State Constraint Kalman Filter for monocular visual-inertial odometry.
+/// Multi-State Constraint Kalman Filter for monocular visual-inertial odometry (backend: features are tracked by the
+/// frontend, a feature not observed in an image counts as lost for that image).
 /// State: [δθ, δbg, δv, δba, δp] of the IMU followed by [δθ, δp] of each camera clone (local orientation error,
 /// R_true = R_est exp(δθ)).
 class Msckf {
@@ -87,7 +86,7 @@ public:
     explicit Msckf(const Parameters& parameters);
 
     void addImu(const ImuMeasurement& measurement);
-    void addImage(const FrameFeatures& features);
+    void addImage(const TrackedFrame& frame);
 
     // State
     const ImuState& imu() const { return imu_; }
@@ -96,7 +95,6 @@ public:
     const std::map<long long, Feature>& features() const { return features_; }
 
     // Diagnostics of the last image
-    const std::vector<RejectedMatch>& rejectedMatches() const { return rejected_matches_; }
     const std::vector<long long>& updatedFeatureIds() const { return updated_feature_ids_; }
     const std::vector<long long>& gatedFeatureIds() const { return gated_feature_ids_; }
     const std::map<long long, Vec3>& triangulatedPoints() const { return triangulated_points_; }
@@ -107,23 +105,14 @@ public:
     KeyframeObservations currentObservations(double min_parallax_degrees = 2.0) const;
 
     // Counters
-    long long epipolarRejections() const { return epipolar_rejections_; }
-    long long homographyRejections() const { return homography_rejections_; }
     long long gatingRejections() const { return gating_rejections_; }
     long long triangulationRejections() const { return triangulation_rejections_; }
     long long zeroVelocityUpdates() const { return zero_velocity_updates_; }
 
 private:
-    struct LastMeasurement {
-        Eigen::MatrixXf descriptors;
-        std::vector<long long> feature_ids;
-        bool valid = false;
-        void erase(long long feature_id);
-    };
-
     void processImu(const ImuMeasurement& measurement);
     void augmentState();
-    void addCameraMeasurements(const FrameFeatures& frame);
+    void addCameraMeasurements(const TrackedFrame& frame);
     void zeroVelocityUpdate();
     void processFeatures();
     void getValidFeatures(const std::vector<long long>& candidates, std::vector<long long>& valid, std::vector<long long>& lost,
@@ -150,15 +139,10 @@ private:
     std::map<long long, Feature> features_;
     std::vector<ImuMeasurement> imu_buffer_;
     bool first_image_arrived_ = false;
-    long long last_feature_id_ = 0;
-    LastMeasurement last_measurement_;
 
-    std::vector<RejectedMatch> rejected_matches_;
     std::vector<long long> updated_feature_ids_;
     std::vector<long long> gated_feature_ids_;
     std::map<long long, Vec3> triangulated_points_;
-    long long epipolar_rejections_ = 0;
-    long long homography_rejections_ = 0;
     long long gating_rejections_ = 0;
     long long triangulation_rejections_ = 0;
     long long zero_velocity_updates_ = 0;

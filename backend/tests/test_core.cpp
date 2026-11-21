@@ -146,17 +146,6 @@ TEST_CASE("Sampson distance is zero for a correct match") {
     CHECK(sampsonDistance(F, pixel(T1, W_f), pixel(T2, W_f) + Vec2(0.0, 20.0)) > 1.0);
 }
 
-TEST_CASE("Homography transfer error for a pure rotation") {
-    rng.seed(42);
-    const Pose T1(randomRotation(), randomVector());
-    const Pose T2(T1.R * expSO3(randomVector(0.1)), T1.t);  // same center
-    const Pose T_C1_C2 = T1.inverse() * T2;
-    const Mat3 H = K * T_C1_C2.R.transpose() * K.inverse();  // pixels of camera 1 -> camera 2
-    const Vec3 W_f = T1.transform(Vec3(0.2, 0.1, 5.0));
-    CHECK(homographyTransferError(H, H.inverse(), pixel(T1, W_f), pixel(T2, W_f)) < 1e-9);
-    CHECK(homographyTransferError(H, H.inverse(), pixel(T1, W_f), pixel(T2, W_f) + Vec2(0.0, 20.0)) > 5.0);
-}
-
 TEST_CASE("Chi-square quantiles") {
     rng.seed(42);
     CHECK(chi2Quantile(1) == Catch::Approx(3.841458820694124).epsilon(1e-10));
@@ -172,7 +161,7 @@ TEST_CASE("Filter with a static IMU stays at rest") {
     Msckf filter(parameters);
     const Vec3 f = -parameters.gravity;
     for (int k = 0; k < 10; ++k) filter.addImu({0.005 * k, Vec3::Zero(), f});  // static samples for the initialization
-    filter.addImage(FrameFeatures{});
+    filter.addImage(TrackedFrame{});
     for (int k = 10; k <= 400; ++k) filter.addImu({0.005 * k, Vec3::Zero(), f});
     CHECK(filter.imu().initialized);
     CHECK(near(filter.imu().T_W_I.t, Vec3::Zero(), 1e-6));

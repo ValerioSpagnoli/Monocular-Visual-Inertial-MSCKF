@@ -34,9 +34,15 @@ target_compile_options(msckf_backend PRIVATE ${MSCKF_WARNINGS})
 
 #* Frontend
 if(MSCKF_BUILD_FRONTEND)
+  # findFundamentalMat is in calib3d up to OpenCV 4 (e.g. the Android SDK) and in geometry from OpenCV 5
   find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
+  if(OpenCV_VERSION VERSION_GREATER_EQUAL 5)
+    find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs geometry)
+  else()
+    find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs calib3d)
+  endif()
   find_package(onnxruntime REQUIRED)
-  add_library(msckf_frontend STATIC frontend/src/xfeat.cpp)
+  add_library(msckf_frontend STATIC frontend/src/xfeat.cpp frontend/src/tracker.cpp)
   target_include_directories(msckf_frontend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/frontend/include)
   target_link_libraries(msckf_frontend PUBLIC msckf_backend ${OpenCV_LIBS} onnxruntime::onnxruntime)
   target_compile_options(msckf_frontend PRIVATE ${MSCKF_WARNINGS})
@@ -62,7 +68,7 @@ if(MSCKF_BUILD_TESTS)
   add_test(NAME msckf_backend_tests COMMAND msckf_backend_tests)
 
   if(MSCKF_BUILD_FRONTEND)
-    add_executable(msckf_frontend_tests frontend/tests/test_xfeat.cpp)
+    add_executable(msckf_frontend_tests frontend/tests/test_xfeat.cpp frontend/tests/test_tracker.cpp)
     target_link_libraries(msckf_frontend_tests PRIVATE msckf_frontend Catch2::Catch2WithMain)
     target_compile_definitions(msckf_frontend_tests PRIVATE MSCKF_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/frontend/tests/data"
                                                             MSCKF_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/models/xfeat.onnx")

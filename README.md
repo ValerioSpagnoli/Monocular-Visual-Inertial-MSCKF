@@ -47,8 +47,8 @@ third_party/             XFeat repository (submodule, only used to export the mo
 
 | Part | Dependencies | Contents |
 |---|---|---|
-| Backend | Eigen | MSCKF (IMU propagation with observability constraint, descriptor matching with epipolar checks, Gauss-Newton triangulation, null-space update, χ² gating, zero-velocity updates), loop closure with a 4-dof pose graph, `VioSystem` entry point. |
-| Frontend | OpenCV, ONNX Runtime | XFeat keypoints and descriptors from `models/xfeat.onnx`, reproducing `XFeat.detectAndCompute`. |
+| Backend | Eigen | MSCKF on tracked features (IMU propagation with observability constraint, Gauss-Newton triangulation, null-space update, χ² gating, zero-velocity updates), loop closure with a 4-dof pose graph, `VioSystem` entry point. |
+| Frontend | OpenCV, ONNX Runtime | XFeat keypoints and descriptors from `models/xfeat.onnx` (reproducing `XFeat.detectAndCompute`) and feature tracking: descriptor matching against the active tracks, RANSAC fundamental matrix between consecutive images. Independent of the filter state. |
 | App | yaml-cpp, CLI11, Rerun C++ SDK | `msckf_run`: EuRoC sequences, evaluation, visualization. |
 
 See [backend/README.md](backend/README.md) for the backend API and the Android build.
@@ -87,7 +87,7 @@ Main options (`pixi run main --help` for all of them):
 - `--save_results`: `results.txt`, `trajectory.csv` and the Rerun recording in `data/euroc/<sequence>/results`
 - `--no_viewer`: do not stream to Rerun
 - `--coreml`: run XFeat with CoreML on Apple hardware
-- Tuning: `--sigma_image`, `--imu_noise_scale` (default ×10 on the datasheet white noise), `--imu_walk_scale`, `--epipolar_threshold`, `--max_triangulation_error`, `--zupt_max_disparity`, `--min_parallax`, `--max_track_length`
+- Tuning: `--sigma_image`, `--imu_noise_scale` (default ×10 on the datasheet white noise), `--imu_walk_scale`, `--ransac_threshold`, `--min_cosine_similarity`, `--max_triangulation_error`, `--zupt_max_disparity`, `--min_parallax`, `--max_track_length`
 
 ### Benchmark
 ```bash
@@ -96,7 +96,7 @@ pixi run benchmark --loop_closure   # extra options are forwarded to msckf_run
 ```
 
 ## Visualization
-The run is streamed to a [Rerun](https://rerun.io) viewer: estimated (blue), ground-truth (green) and loop-corrected (orange) trajectories, body poses, the camera frustum with the live image, the sliding window of clones, the triangulated landmarks and the 3σ position uncertainty; the camera image shows the features and their tracks (orange = used in the EKF update, green = tracked, light blue = new, magenta = discarded by the χ² gating, red = match rejected by the epipolar/homography test); two text panels report the running metrics and the filter status.
+The run is streamed to a [Rerun](https://rerun.io) viewer: estimated (blue), ground-truth (green) and loop-corrected (orange) trajectories, body poses, the camera frustum with the live image, the sliding window of clones, the triangulated landmarks and the 3σ position uncertainty; the camera image shows the features and their tracks (orange = used in the EKF update, green = tracked, light blue = new, magenta = discarded by the χ² gating, red = match rejected by RANSAC); two text panels report the running metrics and the filter status.
 
 ## Regenerating the XFeat model
 `models/xfeat.onnx` is exported from the [XFeat](https://github.com/verlab/accelerated_features) submodule with PyTorch, in a separate environment:

@@ -64,7 +64,7 @@ Visualizer::Visualizer(const Sequence& sequence, const std::optional<std::string
 Visualizer::~Visualizer() = default;
 
 void Visualizer::step(long long index, double timestamp, const VioSystem& system, const std::optional<Pose>& ground_truth, const cv::Mat* image,
-                      const Evaluator& evaluator) {
+                      const std::vector<Vec2>& rejected, const Evaluator& evaluator) {
     if (!rec_) return;
     rec_->set_time_sequence("step", index);
     rec_->set_time_duration_secs("time", timestamp);
@@ -73,10 +73,10 @@ void Visualizer::step(long long index, double timestamp, const VioSystem& system
         rec_->log("world/gt/body", transform(*ground_truth));
         last_ground_truth_ = ground_truth;
     }
-    if (image) logFrame(system, *image, timestamp, evaluator);
+    if (image) logFrame(system, *image, rejected, timestamp, evaluator);
 }
 
-void Visualizer::logFrame(const VioSystem& system, const cv::Mat& image, double timestamp, const Evaluator& evaluator) {
+void Visualizer::logFrame(const VioSystem& system, const cv::Mat& image, const std::vector<Vec2>& rejected, double timestamp, const Evaluator& evaluator) {
     const Msckf& filter = system.filter();
     ++frames_;
 
@@ -114,9 +114,9 @@ void Visualizer::logFrame(const VioSystem& system, const cv::Mat& image, double 
     }
     rec_->log(std::string(kCamera) + "/features", rerun::Points2D(points).with_colors(colors).with_radii(radii));
     rec_->log(std::string(kCamera) + "/tracks", rerun::LineStrips2D(tracks).with_colors(track_colors).with_radii(0.8f));
-    std::vector<rerun::Vec2D> rejected;
-    for (const auto& r : filter.rejectedMatches()) rejected.emplace_back(static_cast<float>(r.keypoint.x()), static_cast<float>(r.keypoint.y()));
-    rec_->log(std::string(kCamera) + "/rejected", rerun::Points2D(rejected).with_colors(kRejected).with_radii(4.0f));
+    std::vector<rerun::Vec2D> rejected_points;
+    for (const Vec2& r : rejected) rejected_points.emplace_back(static_cast<float>(r.x()), static_cast<float>(r.y()));
+    rec_->log(std::string(kCamera) + "/rejected", rerun::Points2D(rejected_points).with_colors(kRejected).with_radii(4.0f));
 
     //* Sliding window, landmarks of the current update, 3-sigma position ellipsoid
     std::vector<rerun::Position3D> window;
@@ -165,8 +165,8 @@ void Visualizer::logFrame(const VioSystem& system, const cv::Mat& image, double 
                   "| Features in the filter | %zu |\n| Rejected matches | %zu |\n| Features in last update (used / gated) | %zu / %zu |\n"
                   "| Camera states in window | %zu |\n| Gyroscope bias | [%+.4f, %+.4f, %+.4f] rad/s |\n| Accelerometer bias | [%+.3f, %+.3f, %+.3f] m/s² |\n"
                   "| Zero-velocity updates | %lld |\n| Loops closed | %zu |\n\n"
-                  "**Image legend:** orange = used in update, green = tracked, light blue = new, magenta = gated, red = rejected match",
-                  timestamp, visible, tracked, visible - tracked, filter.features().size(), filter.rejectedMatches().size(), filter.updatedFeatureIds().size(),
+                  "**Image legend:** orange = used in update, green = tracked, light blue = new, magenta = gated, red = match rejected by RANSAC",
+                  timestamp, visible, tracked, visible - tracked, filter.features().size(), rejected.size(), filter.updatedFeatureIds().size(),
                   filter.gatedFeatureIds().size(), filter.cameras().size(), bg.x(), bg.y(), bg.z(), ba.x(), ba.y(), ba.z(), filter.zeroVelocityUpdates(),
                   system.loopClosure() ? system.loopClosure()->loops().size() : std::size_t{0});
     rec_->log("text/status", rerun::TextDocument(buffer).with_media_type(rerun::components::MediaType::markdown()));

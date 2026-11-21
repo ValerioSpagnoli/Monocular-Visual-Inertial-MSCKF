@@ -34,18 +34,6 @@ Eigen::Index argmax(const Vector& v) {
 
 }  // namespace
 
-void Msckf::LastMeasurement::erase(long long feature_id) {
-    const auto it = std::find(feature_ids.begin(), feature_ids.end(), feature_id);
-    if (it == feature_ids.end()) return;
-    const Eigen::Index row = it - feature_ids.begin();
-    const Eigen::Index rows = descriptors.rows();
-    Eigen::MatrixXf reduced(rows - 1, descriptors.cols());
-    reduced.topRows(row) = descriptors.topRows(row);
-    reduced.bottomRows(rows - row - 1) = descriptors.bottomRows(rows - row - 1);
-    descriptors.swap(reduced);
-    feature_ids.erase(it);
-}
-
 Msckf::Msckf(const Parameters& parameters) : parameters_(parameters) {
     parameters_.min_number_of_frames_to_be_lost = std::max(parameters.min_number_of_frames_to_be_lost, 1);
     parameters_.min_number_of_frames_to_be_tracked = std::max(parameters.min_number_of_frames_to_be_tracked, 2);
@@ -136,15 +124,14 @@ void Msckf::processImu(const ImuMeasurement& measurement) {
 //* Images
 //* ========================================================================================== *//
 
-void Msckf::addImage(const FrameFeatures& features) {
-    rejected_matches_.clear();
+void Msckf::addImage(const TrackedFrame& frame) {
     updated_feature_ids_.clear();
     gated_feature_ids_.clear();
     first_image_arrived_ = true;
     if (!imu_.initialized || parameters_.only_imu) return;
 
     augmentState();
-    addCameraMeasurements(features);
+    addCameraMeasurements(frame);
     if (last_disparity_ >= 0.0 && last_disparity_ < parameters_.zupt_max_disparity) zeroVelocityUpdate();
     processFeatures();
     if (static_cast<int>(cameras_.size()) > parameters_.max_number_of_camera_states) pruneCameraStates();
@@ -180,149 +167,28 @@ int Msckf::cameraIndex(long long camera_id) const {
     throw std::out_of_range("unknown camera clone");
 }
 
-void Msckf::addCameraMeasurements(const FrameFeatures& frame) {
-    // Keep keypoints with at least half the mean detection score
-    double score_mean = 0.0;
-    for (float s : frame.scores) score_mean += s;
-    score_mean /= std::max<std::size_t>(frame.scores.size(), 1);
-
-    std::vector<Vec2> keypoints;
-    std::vector<Eigen::VectorXf> descriptors;
-    std::vector<float> scores;
-    for (std::size_t i = 0; i < frame.scores.size(); ++i) {
-        if (frame.scores[i] < 0.5 * score_mean) continue;
-        keypoints.push_back(frame.keypoints[i]);
-        descriptors.push_back(frame.descriptors.row(static_cast<Eigen::Index>(i)).transpose());
-        scores.push_back(frame.scores[i]);
-    }
-    if (keypoints.empty()) return;
-
+void Msckf::addCameraMeasurements(const TrackedFrame& frame) {
     const long long current_camera_id = imu_.id;
     const CameraClone& camera = cameras_.at(current_camera_id);
 
-    auto newFeature = [&](std::size_t i) {
-        Feature feature;
-        feature.keypoints.push_back(keypoints[i]);
-        feature.descriptors.push_back(descriptors[i]);
-        feature.scores.push_back(scores[i]);
-        feature.camera_ids.push_back(current_camera_id);
-        const Vec3 W_v = camera.T_W_C.R * (invK_ * Vec3(keypoints[i].x(), keypoints[i].y(), 1.0));
-        feature.lines.push_back({camera.T_W_C.t, W_v, scores[i]});
-        feature.tracked_for_n_frames += 1;
-        features_[++last_feature_id_] = std::move(feature);
-    };
-
-    const Eigen::Index descriptor_size = static_cast<Eigen::Index>(descriptors.front().size());
-    if (features_.empty()) {
-        for (std::size_t i = 0; i < keypoints.size(); ++i) newFeature(i);
-        last_measurement_.descriptors.resize(static_cast<Eigen::Index>(keypoints.size()), descriptor_size);
-        last_measurement_.feature_ids.clear();
-        Eigen::Index row = 0;
-        for (const auto& [id, feature] : features_) {
-            last_measurement_.descriptors.row(row++) = feature.descriptors.front().transpose();
-            last_measurement_.feature_ids.push_back(id);
-        }
-        last_measurement_.valid = true;
-        return;
-    }
-
-    //* Mutual nearest-neighbour matching on the descriptor similarity (as XFeat.match)
-    Eigen::MatrixXf current_descriptors(static_cast<Eigen::Index>(keypoints.size()), descriptor_size);
-    for (std::size_t i = 0; i < keypoints.size(); ++i) current_descriptors.row(static_cast<Eigen::Index>(i)) = descriptors[i].transpose();
-    const Eigen::MatrixXf similarity = last_measurement_.descriptors * current_descriptors.transpose();
-
-    std::vector<Eigen::Index> match12(similarity.rows()), match21(similarity.cols());
-    for (Eigen::Index i = 0; i < similarity.rows(); ++i) match12[i] = argmax(similarity.row(i));
-    for (Eigen::Index j = 0; j < similarity.cols(); ++j) match21[j] = argmax(similarity.col(j));
-
-    std::vector<std::pair<long long, std::size_t>> matches;  // (feature id, current keypoint)
-    std::vector<bool> previous_matched(similarity.rows(), false), current_matched(similarity.cols(), false);
-    for (Eigen::Index i = 0; i < similarity.rows(); ++i) {
-        const Eigen::Index j = match12[i];
-        if (match21[j] == i && similarity(i, j) > parameters_.min_cosine_similarity) {
-            matches.emplace_back(last_measurement_.feature_ids[i], static_cast<std::size_t>(j));
-            previous_matched[i] = current_matched[j] = true;
-        }
-    }
-    if (matches.empty()) return;
+    // Observations of known features extend their tracks, the others start new features
     std::vector<double> disparities;
-
-    std::set<long long> lost_feature_ids;
-    for (Eigen::Index i = 0; i < similarity.rows(); ++i)
-        if (!previous_matched[i]) lost_feature_ids.insert(last_measurement_.feature_ids[i]);
-
-    //* Two-view geometry between each camera clone and the current camera: homography for (almost) pure
-    //* rotations, where the epipolar geometry is undefined, fundamental matrix otherwise
-    struct TwoView { bool homography; Mat3 M; Mat3 M_inv; };
-    std::map<long long, TwoView> two_view;
-    for (const auto& [id, clone] : cameras_) {
-        const Pose T_C1_C2 = clone.T_W_C.inverse() * camera.T_W_C;
-        if (T_C1_C2.t.norm() < 0.01) {
-            // Pixels of the clone (camera 1) -> current camera (camera 2): x2 ~ K R_C1_C2^T K^-1 x1
-            const Mat3 H = parameters_.K * T_C1_C2.R.transpose() * invK_;
-            two_view[id] = {true, H, H.inverse()};
-        } else {
-            two_view[id] = {false, fundamentalMatrix(T_C1_C2, invK_), Mat3::Zero()};
-        }
-    }
-
-    for (const auto& [feature_id, j] : matches) {
-        Feature& feature = features_.at(feature_id);
-        const Vec2& keypoint = keypoints[j];
-
-        // Check the match against every previous observation of the feature
-        bool passed = true;
-        for (std::size_t k = 0; k < feature.keypoints.size(); ++k) {
-            const Vec2& previous = feature.keypoints[k];
-            const TwoView& geometry = two_view.at(feature.camera_ids[k]);
-            if (geometry.homography) {
-                if (homographyTransferError(geometry.M, geometry.M_inv, previous, keypoint) > parameters_.homography_rejection_threshold) {
-                    passed = false;
-                    ++homography_rejections_;
-                    rejected_matches_.push_back({keypoint, "homography"});
-                    break;
-                }
-            } else if (sampsonDistance(geometry.M, previous, keypoint) > parameters_.epipolar_rejection_threshold) {
-                passed = false;
-                ++epipolar_rejections_;
-                rejected_matches_.push_back({keypoint, "epipolar"});
-                break;
-            }
-        }
-        if (!passed) {
-            feature.lost_for_n_frames += 1;
-            continue;
-        }
-
-        disparities.push_back((keypoint - feature.keypoints.back()).norm());
-        const Vec3 W_v = camera.T_W_C.R * (invK_ * Vec3(keypoint.x(), keypoint.y(), 1.0));
-        feature.keypoints.push_back(keypoint);
-        feature.descriptors.push_back(descriptors[j]);
-        feature.scores.push_back(scores[j]);
+    std::set<long long> observed;
+    for (const FeatureObservation& observation : frame.observations) {
+        observed.insert(observation.id);
+        const Vec3 W_v = camera.T_W_C.R * (invK_ * Vec3(observation.keypoint.x(), observation.keypoint.y(), 1.0));
+        Feature& feature = features_[observation.id];
+        if (!feature.keypoints.empty()) disparities.push_back((observation.keypoint - feature.keypoints.back()).norm());
+        feature.keypoints.push_back(observation.keypoint);
+        feature.descriptors.push_back(observation.descriptor);
+        feature.scores.push_back(observation.score);
         feature.camera_ids.push_back(current_camera_id);
-        feature.lines.push_back({camera.T_W_C.t, W_v, scores[j]});
+        feature.lines.push_back({camera.T_W_C.t, W_v, observation.score});
         feature.tracked_for_n_frames += 1;
         feature.lost_for_n_frames = 0;
     }
-
-    for (std::size_t j = 0; j < keypoints.size(); ++j)
-        if (!current_matched[j]) newFeature(j);
-
-    //* Descriptors of all features (score-weighted average of their observations) for the next matching
-    last_measurement_.descriptors.resize(static_cast<Eigen::Index>(features_.size()), descriptor_size);
-    last_measurement_.feature_ids.clear();
-    Eigen::Index row = 0;
-    for (auto& [id, feature] : features_) {
-        if (lost_feature_ids.count(id)) feature.lost_for_n_frames += 1;
-        Eigen::VectorXf weighted = Eigen::VectorXf::Zero(descriptor_size);
-        float weight_sum = 0.0f;
-        for (std::size_t k = 0; k < feature.descriptors.size(); ++k) {
-            weighted += feature.scores[k] * feature.descriptors[k];
-            weight_sum += feature.scores[k];
-        }
-        last_measurement_.descriptors.row(row++) = (weighted / weight_sum).transpose();
-        last_measurement_.feature_ids.push_back(id);
-    }
+    for (auto& [id, feature] : features_)
+        if (!observed.count(id)) feature.lost_for_n_frames += 1;
 
     // Median displacement (as np.median: mean of the two central values for an even count)
     last_disparity_ = -1.0;
@@ -609,7 +475,6 @@ void Msckf::removeFeatures(const std::vector<long long>& feature_ids) {
     for (long long id : feature_ids) {
         features_.erase(id);
         triangulated_points_.erase(id);  // bounded memory on long trajectories
-        last_measurement_.erase(id);
     }
     std::vector<long long> unused_cameras;
     for (const auto& [camera_id, clone] : cameras_) {
@@ -647,7 +512,6 @@ void Msckf::removeCameras(const std::vector<long long>& camera_ids) {
     for (long long id : empty_features) {
         features_.erase(id);
         triangulated_points_.erase(id);
-        last_measurement_.erase(id);
     }
 }
 
