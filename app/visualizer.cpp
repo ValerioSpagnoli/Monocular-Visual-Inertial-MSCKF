@@ -14,6 +14,7 @@ namespace {
 const rerun::Color kGroundTruth(40, 190, 80), kEstimate(40, 130, 255), kCorrected(255, 120, 40);
 const rerun::Color kTrack(40, 220, 120), kNew(80, 200, 255), kUpdate(255, 160, 0), kGated(200, 0, 200), kRejected(255, 50, 50);
 const rerun::Color kMap(200, 200, 200), kWindow(255, 200, 60), kCovariance(255, 80, 80);
+const rerun::Color kKeyframe(255, 255, 255), kLoop(255, 0, 200);
 constexpr const char* kCamera = "world/est/body/camera";
 
 rerun::Position3D position(const Vec3& p) { return {static_cast<float>(p.x()), static_cast<float>(p.y()), static_cast<float>(p.z())}; }
@@ -145,6 +146,7 @@ void Visualizer::logFrame(const VioSystem& system, const cv::Mat& image, double 
         corrected_trajectory_.push_back({static_cast<float>(corrected.t.x()), static_cast<float>(corrected.t.y()), static_cast<float>(corrected.t.z())});
     }
     for (const auto& [id, point] : filter.triangulatedPoints()) landmarks_[id] = point;
+    if (system.loopClosure()) logLoopClosure(*system.loopClosure());
     if (frames_ % 5 == 0) {
         rec_->log("world/est/trajectory", rerun::LineStrips3D(strip(estimate_trajectory_)).with_colors(kEstimate).with_radii(0.01f));
         if (ground_truth_trajectory_.size() > 1) rec_->log("world/gt/trajectory", rerun::LineStrips3D(strip(ground_truth_trajectory_)).with_colors(kGroundTruth).with_radii(0.01f));
@@ -156,6 +158,11 @@ void Visualizer::logFrame(const VioSystem& system, const cv::Mat& image, double 
     }
 
     //* Text panels
+    std::string last_loop = "–";
+    if (system.loopClosure() && !system.loopClosure()->loops().empty()) {
+        const LoopDetection& loop = system.loopClosure()->loops().back();
+        last_loop = "keyframe " + std::to_string(loop.keyframe) + " ↔ " + std::to_string(loop.candidate) + ", " + std::to_string(loop.inliers) + " inliers";
+    }
     rec_->log("text/metrics", rerun::TextDocument(evaluator.markdown()).with_media_type(rerun::components::MediaType::markdown()));
     char buffer[1536];
     const Vec3& bg = filter.imu().gyroscope_bias;
@@ -164,12 +171,35 @@ void Visualizer::logFrame(const VioSystem& system, const cv::Mat& image, double 
                   "| Filter | Value |\n|---|---|\n| Time | %.2f s |\n| Features in image (tracked / new) | %d (%d / %d) |\n"
                   "| Features in the filter | %zu |\n| Rejected matches | %zu |\n| Features in last update (used / gated) | %zu / %zu |\n"
                   "| Camera states in window | %zu |\n| Gyroscope bias | [%+.4f, %+.4f, %+.4f] rad/s |\n| Accelerometer bias | [%+.3f, %+.3f, %+.3f] m/s² |\n"
-                  "| Zero-velocity updates | %lld |\n| Loops closed | %zu |\n\n"
+                  "| Zero-velocity updates | %lld |\n| Keyframes / loops closed | %zu / %zu |\n| Last loop | %s |\n\n"
                   "**Image legend:** orange = used in update, green = tracked, light blue = new, magenta = gated, red = rejected match",
                   timestamp, visible, tracked, visible - tracked, filter.features().size(), filter.rejectedMatches().size(), filter.updatedFeatureIds().size(),
                   filter.gatedFeatureIds().size(), filter.cameras().size(), bg.x(), bg.y(), bg.z(), ba.x(), ba.y(), ba.z(), filter.zeroVelocityUpdates(),
-                  system.loopClosure() ? system.loopClosure()->loops().size() : std::size_t{0});
+                  system.loopClosure() ? system.loopClosure()->graph().nodes().size() : std::size_t{0},
+                  system.loopClosure() ? system.loopClosure()->loops().size() : std::size_t{0}, last_loop.c_str());
     rec_->log("text/status", rerun::TextDocument(buffer).with_media_type(rerun::components::MediaType::markdown()));
+}
+
+void Visualizer::logLoopClosure(const LoopClosure& loop_closure) {
+    // Keyframes at their pose-graph positions (the frame of the loop-corrected trajectory) and one segment per loop
+    // between the revisited keyframe and the current one; logged only when the graph changes
+    const auto& nodes = loop_closure.graph().nodes();
+    const auto& loops = loop_closure.loops();
+    if (nodes.size() == logged_keyframes_ && loops.size() == logged_loops_) return;
+    logged_keyframes_ = nodes.size();
+    logged_loops_ = loops.size();
+
+    std::vector<rerun::Position3D> keyframes;
+    for (const auto& node : nodes) keyframes.push_back(position(node.p));
+    rec_->log("world/loop_closure/keyframes", rerun::Points3D(keyframes).with_colors(kKeyframe).with_radii(0.02f));
+    std::vector<rerun::LineStrip3D> segments;
+    for (const LoopDetection& loop : loops) {
+        const Vec3& a = nodes[static_cast<std::size_t>(loop.candidate)].p;
+        const Vec3& b = nodes[static_cast<std::size_t>(loop.keyframe)].p;
+        segments.emplace_back(std::vector<rerun::Vec3D>{{static_cast<float>(a.x()), static_cast<float>(a.y()), static_cast<float>(a.z())},
+                                                        {static_cast<float>(b.x()), static_cast<float>(b.y()), static_cast<float>(b.z())}});
+    }
+    if (!segments.empty()) rec_->log("world/loop_closure/loops", rerun::LineStrips3D(segments).with_colors(kLoop).with_radii(0.01f));
 }
 
 }  // namespace msckf
