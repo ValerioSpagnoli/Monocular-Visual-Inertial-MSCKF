@@ -21,9 +21,10 @@ class Line:
         return f'Base: {self.base} - Direction: {self.direction} - Confidence: {self.confidence}'
 
 class Isometry3D():  
-    def __init__(self, R: np.ndarray = np.eye(3), t: np.ndarray = np.zeros(3)):    
-        self.R = R
-        self.t = t.reshape((1,3))[0]
+    def __init__(self, R: np.ndarray = None, t: np.ndarray = None):
+        # Own copies: a default array or a view of the caller's array would be shared between instances
+        self.R = np.eye(3) if R is None else np.array(R, dtype=float)
+        self.t = np.zeros(3) if t is None else np.array(t, dtype=float).reshape(3)
                         
     def __str__(self) -> str:
         return f'R:\n{self.R}\nt: {self.t}'
@@ -51,7 +52,9 @@ class Isometry3D():
         return T
 
 class InverseDepthPoint():
-    def __init__(self, camera_pose: Isometry3D = Isometry3D(np.eye(3), np.zeros(3)), direction: np.ndarray = np.zeros(3)) -> None:
+    def __init__(self, camera_pose: Isometry3D = None, direction: np.ndarray = None) -> None:
+        if camera_pose is None: camera_pose = Isometry3D()
+        if direction is None: direction = np.zeros(3)
         self.base = camera_pose.t
         self.theta = np.arctan2(direction[0], direction[2])
         self.phi = np.arctan2(-direction[1], np.sqrt(direction[0]**2 + direction[2]**2))

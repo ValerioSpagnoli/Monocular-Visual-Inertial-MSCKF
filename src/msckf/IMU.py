@@ -13,10 +13,10 @@ class IMUMeasurement:
 
 class IMU:
     def __init__(self,
-                T_W_I: Isometry3D = Isometry3D(np.eye(3), np.zeros(3)),
-                T_W_Ii: Isometry3D = Isometry3D(np.eye(3), np.zeros(3)),   
-                v_W_Ii: np.ndarray = np.zeros(3),
-                W_gravity: np.ndarray = np.array([0, 0, -9.81]),
+                T_W_I: Isometry3D = None,
+                T_W_Ii: Isometry3D = None,
+                v_W_Ii: np.ndarray = None,
+                W_gravity: np.ndarray = None,
                 id: int = 0,
                 timestamp: float = 0.0
         ) -> None:
@@ -24,16 +24,16 @@ class IMU:
         self.id = id
         self.timestamp = timestamp
         
-        self.T_W_I = T_W_I    # static transform of IMU Frame in World Frame
-        self.T_W_Ii = T_W_Ii  # transform of IMU Frame i-th in World Frame
-        self.v_W_Ii = v_W_Ii  # velocity of the IMU frame in world frame at time i
+        self.T_W_I = T_W_I if T_W_I is not None else Isometry3D()       # static transform of IMU Frame in World Frame
+        self.T_W_Ii = T_W_Ii if T_W_Ii is not None else Isometry3D()    # transform of IMU Frame i-th in World Frame
+        self.v_W_Ii = np.zeros(3) if v_W_Ii is None else np.array(v_W_Ii, dtype=float) # velocity of the IMU frame in world frame at time i
         self.w_W_Ii = np.zeros(3) # angular velocity of the IMU frame in world frame at time i
         self.a_W_Ii = np.zeros(3) # linear acceleration of the IMU frame in world frame at time i
         self.dt = 0.0
         
         self.gyroscope_bias = np.zeros(3)
         self.accelerometer_bias = np.zeros(3) 
-        self.W_gravity = W_gravity
+        self.W_gravity = np.array([0, 0, -9.81]) if W_gravity is None else W_gravity
         self.planet_angular_velocity = np.array([0, 0, 0])
         
         self.T_W_Ii_null = Isometry3D(np.eye(3), np.zeros(3))
