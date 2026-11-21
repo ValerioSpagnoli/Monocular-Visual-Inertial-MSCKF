@@ -25,6 +25,9 @@ struct Parameters {
     double gyroscope_random_walk = 1e-6;
     Vec3 gravity{0.0, 0.0, -9.81};
     bool estimate_initial_gyroscope_bias = false;
+    // Add the uncertainty of the gravity direction estimated from the static samples to the initial orientation
+    // covariance (C++ only; false reproduces the Python implementation)
+    bool initial_tilt_covariance_from_noise = true;
     Eigen::Matrix<double, 15, 1> initial_covariance_diagonal = Eigen::Matrix<double, 15, 1>::Zero();  // [δθ, δbg, δv, δba, δp]
 
     // Features

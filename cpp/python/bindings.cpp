@@ -37,6 +37,7 @@ PYBIND11_MODULE(msckf_cpp, m) {
         .def_readwrite("gyroscope_random_walk", &Parameters::gyroscope_random_walk)
         .def_readwrite("gravity", &Parameters::gravity)
         .def_readwrite("estimate_initial_gyroscope_bias", &Parameters::estimate_initial_gyroscope_bias)
+        .def_readwrite("initial_tilt_covariance_from_noise", &Parameters::initial_tilt_covariance_from_noise)
         .def_readwrite("initial_covariance_diagonal", &Parameters::initial_covariance_diagonal)
         .def_readwrite("min_cosine_similarity", &Parameters::min_cosine_similarity)
         .def_readwrite("use_parallax", &Parameters::use_parallax)

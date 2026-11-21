@@ -44,6 +44,14 @@ if(MSCKF_BUILD_APP)
   target_link_libraries(msckf_frontend PUBLIC msckf_core ${OpenCV_LIBS} onnxruntime::onnxruntime)
   target_compile_options(msckf_frontend PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra>)
 
+  # Desktop application: datasets, evaluation and Rerun visualization
+  find_package(yaml-cpp REQUIRED)
+  find_package(CLI11 REQUIRED)
+  find_package(rerun_sdk REQUIRED)
+  add_executable(msckf_run app/main.cpp app/dataset.cpp app/evaluation.cpp app/visualizer.cpp)
+  target_link_libraries(msckf_run PRIVATE msckf_frontend yaml-cpp::yaml-cpp CLI11::CLI11 rerun_sdk)
+  target_compile_options(msckf_run PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra>)
+
   if(MSCKF_BUILD_PYTHON)
     # Front-end bindings, used to check the C++ XFeat against PyTorch
     pybind11_add_module(xfeat_cpp python/xfeat_bindings.cpp)

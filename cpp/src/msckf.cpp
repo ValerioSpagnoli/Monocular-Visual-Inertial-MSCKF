@@ -74,6 +74,16 @@ void Msckf::addImu(const ImuMeasurement& measurement) {
     }
     if (!imu_.initialized) {
         imu_.initialize(imu_buffer_, parameters_.estimate_initial_gyroscope_bias);
+        if (parameters_.initial_tilt_covariance_from_noise && imu_buffer_.size() > 1) {
+            // The gravity direction comes from the mean of N noisy samples: sigma_f = density / sqrt(dt) per sample,
+            // so the tilt error has variance sigma_f^2 / (N g^2)
+            const double n = static_cast<double>(imu_buffer_.size());
+            const double dt = (imu_buffer_.back().timestamp - imu_buffer_.front().timestamp) / (n - 1.0);
+            if (dt > 0.0) {
+                const double variance = std::pow(parameters_.accelerometer_noise_density, 2) / dt / (n * imu_.gravity.squaredNorm());
+                covariance_.topLeftCorner<3, 3>() += variance * Mat3::Identity();
+            }
+        }
         for (const auto& buffered : imu_buffer_) processImu(buffered);
     }
     processImu(measurement);

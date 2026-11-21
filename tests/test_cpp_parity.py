@@ -107,6 +107,7 @@ def test_full_filter_parity():
     cpp_parameters = __import__('src.msckf.cpp_backend', fromlist=['to_cpp_parameters']).to_cpp_parameters(parameters)
     cpp_parameters.max_track_length = 0                # update strategy of the Python implementation
     cpp_parameters.update_features_on_prune = False
+    cpp_parameters.initial_tilt_covariance_from_noise = False
     cpp_filter = msckf_cpp.Msckf(cpp_parameters)
 
     image_at = dict(images)
