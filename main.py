@@ -9,6 +9,7 @@ from scipy.stats import chi2
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from src.utils.geometry import *
 from src.utils.visualization_utils import *
@@ -306,6 +307,24 @@ T_est_gt = None # transform from the ground-truth world frame to the estimator w
 relative_position_error_deque = deque(maxlen=10)
 relative_orientation_error_deque = deque(maxlen=10)
 
+#* Measurements as arrays: DataFrame.iloc in the loop costs more than the IMU propagation itself
+imu_array = imu_data[['timestamp', 'wx', 'wy', 'wz', 'ax', 'ay', 'az']].to_numpy()
+camera_timestamps = camera_images['timestamp'].to_numpy()
+camera_paths = camera_images['image_path'].tolist()
+
+#* Front-end in a separate thread: the next image is read, undistorted and passed to XFeat (GPU) while the
+#* filter (CPU) processes the current one. The time spent waiting for it is still counted in the loop time.
+def load_camera_frame(index: int):
+    image = cv2.imread(camera_paths[index])
+    if source == 'euroc': image = euroc.undistort(image)
+    features = msckf.feature_extractor.extract_features(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), msckf.number_of_extracted_features)
+    return image, features
+
+prefetch = source != 'synthetic'
+front_end = ThreadPoolExecutor(max_workers=1) if prefetch else None
+next_frame = front_end.submit(load_camera_frame, last_camera_time_index) if prefetch else None
+first_timestamp, last_timestamp = imu_array[0, 0], imu_array[0, 0]
+
 #** Loop
 # ========================================================================================== #
 for i in tqdm(range(max_frames)):     
@@ -316,10 +335,10 @@ for i in tqdm(range(max_frames)):
     
     #** Get measurements
     # .......................................................................................... #
-    imu_timestamp = imu_data.iloc[i]['timestamp']
-    camera_timestamp = camera_images.iloc[last_camera_time_index]['timestamp']
-    angular_velocity = np.array([imu_data.iloc[i]['wx'], imu_data.iloc[i]['wy'], imu_data.iloc[i]['wz']])
-    linear_acceleration = np.array([imu_data.iloc[i]['ax'], imu_data.iloc[i]['ay'], imu_data.iloc[i]['az']])
+    imu_timestamp = imu_array[i, 0]
+    camera_timestamp = camera_timestamps[last_camera_time_index]
+    angular_velocity = imu_array[i, 1:4].copy()
+    linear_acceleration = imu_array[i, 4:7].copy()
     imu_measurement = IMUMeasurement(imu_timestamp, angular_velocity, linear_acceleration)
 
     #** Test VIO with MSCKF
@@ -329,7 +348,7 @@ for i in tqdm(range(max_frames)):
     # Process the image once the IMU has been propagated up to its timestamp (real IMU and camera clocks never match exactly)
     if imu_timestamp >= camera_timestamp - 1e-6:
         is_there_camera_measurement = True
-        image_path = camera_images.iloc[last_camera_time_index]['image_path']
+        image_path = camera_paths[last_camera_time_index]
         last_camera_time_index += 1
         
         if source == 'synthetic':
@@ -345,12 +364,13 @@ for i in tqdm(range(max_frames)):
             msckf.feature_callback(image, camera_measurement)
         
         else:
-            image = cv2.imread(image_path)
-            if source == 'euroc': image = euroc.undistort(image)
-            msckf.feature_callback(image)     
+            image, features = next_frame.result()
+            if last_camera_time_index < len(camera_paths): next_frame = front_end.submit(load_camera_frame, last_camera_time_index)
+            msckf.feature_callback(image, features)
         
     
     end_loop = time.time()
+    last_timestamp = imu_timestamp
     delta_time = end_loop - start_loop
     loop_time.append(delta_time)
     if is_there_camera_measurement: loop_time_with_camera.append(delta_time)
@@ -535,6 +555,7 @@ str_results += f' - Rejections:\n'
 str_results += f'   - Epipolar:       {msckf.number_of_features_discarded_for_epipolar_test}\n'
 str_results += f'   - Homography:     {msckf.number_of_features_discarder_for_homography_test}\n'
 str_results += f'   - Gating (χ²):    {msckf.number_of_residuals_discarded_for_gasting_test}\n'
+str_results += f' - Real-time factor: {np.sum(loop_time) / max(last_timestamp - first_timestamp, 1e-9):.2f} (processing time / data duration, < 1 is faster than real time)\n'
 str_results += f' - Profiling:\n'
 str_results += f'   - Mean:           {mean_loop_time} s - {mean_loop_frequency} Hz\n'
 str_results += f'   - With Camera:    {mean_loop_time_with_camera} s - {mean_loop_frequency_with_camera} Hz\n'
