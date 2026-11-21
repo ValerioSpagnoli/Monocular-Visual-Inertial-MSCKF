@@ -117,6 +117,7 @@ The script accepts the following command-line parameters:
 - `--max_frames`: Maximum number of frames to process (integer, e.g., `1000`)
 - `--noise_level`: The noise level of the generated IMU data (choices: `low`, `mid`, `high`)
 - `--save_results`: Flag to save the results to the `<noise_level>` folder (no value needed)
+- `--backend`: Filter implementation, `python` (default) or `cpp` (requires `pixi run build-cpp`)
 - `--device`: Torch device used by XFeat (choices: `auto`, `cpu`, `mps`, `cuda`; default `auto` picks CUDA, then Apple GPU (MPS), then CPU)
 
 Example usage:
@@ -127,6 +128,13 @@ pixi run main --source euroc --sequence V1_01_easy --max_frames 30000 --save_res
 
 ### EuRoC MAV
 Download the ASL-format sequences from the [ETH Research Collection](https://www.research-collection.ethz.ch/entities/researchdata/bcaf173e-5dac-484b-bc37-faf97a594f1f) and extract them as `data/euroc/<sequence>/mav0/` (only `cam0`, `imu0` and `state_groundtruth_estimate0` are needed). IMU data is real, so `--noise_level` is ignored; calibration and IMU noise are read from the `sensor.yaml` files and the results are saved to `data/euroc/<sequence>/results/`.
+
+## C++ core (Android)
+The filter is also available as a C++17 library that depends only on Eigen, for the Android port: see [cpp/README.md](cpp/README.md).
+```bash
+pixi run build-cpp && pixi run test-cpp
+pixi run main --source euroc --sequence V1_01_easy --backend cpp
+```
 
 ## Visualization
 The run is streamed to a [Rerun](https://rerun.io) viewer with a predefined layout:

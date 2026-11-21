@@ -129,7 +129,8 @@ Resta l'inclinazione su V1_01: il ground truth EuRoC dichiara b_a,y ≈ 0,55 m/s
 - [x] Modello di misura delle feature: Jacobiani calcolati sul punto scalato da ρ (posizione gonfiata della profondità) e re-inizializzazione inverse depth con la profondità lungo z invece della distanza lungo il raggio.
 - [x] Valutazione: errore di posizione nel frame del body confrontato con bound nel frame del mondo; allineamento del ground truth a 6 gradi di libertà che nascondeva l'errore iniziale di inclinazione → ora 4 gradi di libertà (posizione + yaw).
 - [x] **Consistenza della propagazione:** il generatore sintetico non era integrabile esattamente (interpolazione lineare → salti di velocità). Ora (`e2eb507`) PCHIP + slerp e misure costruite per l'integratore del filtro. Con la sola IMU su P001 il NEES è ≈ 3–4 (prima 297 / 46).
-- [ ] **Consistenza degli update visivi:** su P001 il NEES di posizione è 4 con rumore IMU alto, 13 medio, 20–50 basso, indipendentemente da `sigma_image` → errore strutturale della parte visiva. Candidato principale: triangolazione per punto medio dei raggi invece di Gauss-Newton in inverse depth; poi verificare la soglia di 45° di parallasse e il pruning.
+- [x] **Consistenza degli update visivi** (`18e5af6`): triangolazione Gauss-Newton in inverse depth sulle pose correnti dei cloni (prima: punto medio dei raggi con le pose al momento dell'osservazione, e feature usate anche se la triangolazione falliva). Su P001 NEES ≈ 2,3–2,8 / 3,8–4,0 a tutti i livelli di rumore, 100 % dentro i 3σ, ATE 0,08–0,13 m.
+- [x] **Zero-velocity update** (`18e5af6`): da fermi nessuna feature ha parallasse, quindi il filtro derivava con la sola IMU (fino a 6 m su V1_03). ZUPT quando la disparità mediana è < 1 px **e** v = 0 passa un test χ² (la sola disparità scatta anche avanzando verso punti lontani).
 - [ ] **Inclinazione/bias su EuRoC V1_01:** il ground truth ha b_a,y ≈ 0,55 m/s² (confermato dalla fase statica: 0,48), il filtro stima 0,14. Con moto quasi solo in yaw inclinazione e bias orizzontale sono poco separabili, ma il filtro si dichiara sicuro (osservabilità spuria non coperta dall'OC).
 - [ ] `prune_poorest_camera_states` può rimuovere la camera appena clonata o quelle più recenti → escludere gli ultimi N cloni.
 - [ ] `Q = Φ G Qc Gᵀ Φᵀ dt`: è un'approssimazione; valutare l'integrazione trapezoidale.
@@ -184,13 +185,13 @@ Sequenze complete: V1_02 0,77, TartanAir P001 0,80. Risultati invariati (differe
 ## Fase 4 — Esecuzione su smartphone
 
 ### 4.0 Decisioni da prendere
-- [ ] Piattaforma target: **iOS** (sviluppo naturale da Mac, CoreML, ARKit per confronto) o **Android** (NDK, TFLite/ONNX Runtime).
-- [ ] Architettura: core C++ portabile (consigliato) + app nativa sottile (Swift / Kotlin). Python on-device non è una strada praticabile.
+- [x] Piattaforma target: **Android** (NDK, TFLite/ONNX Runtime per XFeat).
+- [x] Architettura: core C++ portabile (`cpp/`, solo Eigen) + app nativa sottile (Kotlin/JNI).
 
 ### 4.1 Validare prima su dati reali (ancora su Mac)
-- [ ] Testare su **EuRoC MAV** (IMU reale, calibrazione nota) per uscire dai dati IMU sintetici.
+- [x] Testare su **EuRoC MAV** (IMU reale, calibrazione nota) per uscire dai dati IMU sintetici.
 - [ ] Aggiungere la stima/compensazione dell'offset temporale camera-IMU e, se serve, del rolling shutter.
-- [ ] Inizializzazione robusta (statica e dinamica), stima iniziale dei bias.
+- [x] Inizializzazione statica con stima del bias del giroscopio e ZUPT. Manca l'inizializzazione dinamica (partenza in movimento).
 
 ### 4.2 Acquisizione dati dallo smartphone
 - [ ] App minimale di registrazione: frame camera + IMU (accelerometro/giroscopio) con timestamp sullo stesso orologio.
@@ -203,7 +204,10 @@ Sequenze complete: V1_02 0,77, TartanAir P001 0,80. Risultati invariati (differe
 - [ ] Quantizzazione (FP16/INT8) e valutazione dell'impatto su matching e accuratezza.
 
 ### 4.4 Core on-device
-- [ ] Portare il filtro (C++/Eigen, dalla Fase 3.4) con interfaccia `imu_callback` / `image_callback`.
+- [x] Filtro portato in C++17/Eigen (`ce8c152`, `cpp/`): `Msckf::addImu` / `Msckf::addImage(keypoints, descriptors, scores)`. Parità con il Python ~1e-12 sullo scenario sintetico (`tests/test_cpp_parity.py`), unit test Catch2, binding pybind11 (`--backend cpp`), cross-compilazione con `pixi run build-android`.
+  - EuRoC V1_01 30 s: frame con camera 50 → 22 ms (ormai in attesa di XFeat), passo IMU 106 → 35 µs, fattore di tempo reale 1,01 → 0,45.
+  - [ ] Installare l'NDK (Android Studio → SDK Tools → NDK) e verificare `pixi run build-android`.
+  - [ ] Layer JNI e app Kotlin minima.
 - [ ] Gestire i thread (front-end, back-end), le code dei sensori e i frame persi.
 - [ ] Visualizzazione minima della traiettoria nell'app; log su file per il debug.
 - [ ] Misurare latenza, frequenza, consumi e temperatura; confrontare la traiettoria con ARKit/ARCore come riferimento.
