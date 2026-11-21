@@ -29,13 +29,20 @@ class Isometry3D():
     def __str__(self) -> str:
         return f'R:\n{self.R}\nt: {self.t}'
     
+    @classmethod
+    def _from_arrays(cls, R: np.ndarray, t: np.ndarray) -> 'Isometry3D':
+        """Wraps freshly computed arrays without copying them (internal use, hot paths)."""
+        T = cls.__new__(cls)
+        T.R, T.t = R, t
+        return T
+    
     def __mul__(self, other: 'Isometry3D') -> 'Isometry3D':
-        I = self.matrix() @ other.matrix()
-        return Isometry3D(I[:3,:3], I[:3,3])
+        return Isometry3D._from_arrays(self.R @ other.R, self.R @ other.t + self.t)
     
     def inv(self) -> 'Isometry3D':
-        I_inv = np.linalg.inv(self.matrix())
-        return Isometry3D(I_inv[:3,:3], I_inv[:3,3])
+        # Closed form for a rigid transform (R orthonormal): [R t]^-1 = [R^T -R^T t]
+        R_T = self.R.T
+        return Isometry3D._from_arrays(R_T.copy(), -R_T @ self.t)
     
     def T(self) -> 'Isometry3D':
         I_transpose = self.matrix().T

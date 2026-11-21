@@ -5,6 +5,7 @@ from src.utils.geometry import *
 class Camera:
     def __init__(self, K: np.ndarray, width: int, height: int, T_W_Ci: Isometry3D) -> None:
         self.K =  K
+        self.invK = np.linalg.inv(K)
         self.width = width
         self.height = height
         self.T_W_Ci = T_W_Ci
@@ -32,7 +33,7 @@ class Camera:
         #* Ci_v:  versor of the 3D point in camera coordinates
         #* Inverse Projection: Ci_v = inv(K) * [Im_p, 1]      
           
-        Ci_v = np.linalg.inv(self.K) @ np.append(Im_p, 1)
+        Ci_v = self.invK @ np.array([Im_p[0], Im_p[1], 1.0])
         return Ci_v  
     
     def Ci2W(self, Ci_n: np.ndarray, is_versor: bool = False) -> np.ndarray:        
