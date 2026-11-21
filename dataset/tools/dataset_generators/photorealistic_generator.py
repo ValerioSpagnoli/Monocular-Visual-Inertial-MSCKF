@@ -172,7 +172,7 @@ class PhotorealisticGenerator():
                 
                 current_velocity = (current_position - prev_position) / dt
                 linear_acceleration = (current_velocity - prev_velocity) / dt
-                linear_acceleration = prev_rotation.T @ (linear_acceleration + self.W_gravity)
+                linear_acceleration = prev_rotation.T @ (linear_acceleration - self.W_gravity) # specific force f = R^T (a - g)
                 
                 q_prev = R2quaternion(prev_rotation) # x, y, z, w
                 q_current = R2quaternion(current_rotation) # x, y, z, w

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List
 import numpy as np
+from scipy.spatial.transform import Rotation
 from src.utils.geometry import *
 
 @dataclass
@@ -43,19 +44,14 @@ class IMU:
     def initialize(self, imu_measurements: List[IMUMeasurement], estimate_gyroscope_bias: bool = False):
         self.is_initialized = True
         
-        W_gravity = self.W_gravity / np.linalg.norm(self.W_gravity)
         mean_angular_velocity = np.mean([imu_measurement.angular_velocity for imu_measurement in imu_measurements], axis=0)
         mean_linear_acceleration = np.mean([imu_measurement.linear_acceleration for imu_measurement in imu_measurements], axis=0)
-        I_gravity = mean_linear_acceleration / np.linalg.norm(mean_linear_acceleration)           
-         
-        axis = np.cross(I_gravity, W_gravity)
-        axis = axis / np.linalg.norm(axis)
         
-        theta = np.arccos(I_gravity.T @ W_gravity)
-        
-        if np.isclose(theta, 0.0): R_W_I = np.eye(3)
-        elif np.isclose(theta, np.pi): R_W_I = -np.eye(3)
-        else: R_W_I = np.eye(3) + np.sin(theta) * skew(axis) + (1 - np.cos(theta)) * skew(axis) @ skew(axis)
+        # At rest the accelerometer measures f = R_W_I^T (0 - g): the specific force points up, opposite to gravity.
+        # R_W_I is the smallest rotation taking the measured up direction onto the world up direction (yaw is arbitrary).
+        W_up = -self.W_gravity / np.linalg.norm(self.W_gravity)
+        I_up = mean_linear_acceleration / np.linalg.norm(mean_linear_acceleration)
+        R_W_I = Rotation.align_vectors(W_up[None], I_up[None])[0].as_matrix()
         
         self.T_W_Ii = Isometry3D(R_W_I, np.zeros(3))
         
@@ -92,7 +88,8 @@ class IMU:
             
         R_W_Ii_new = R_W_Ii @ R_W_Ii_dot
         
-        linear_acceleration = R_W_Ii @ linear_acceleration - self.W_gravity
+        # The accelerometer measures the specific force f = R_W_I^T (a - g)
+        linear_acceleration = R_W_Ii @ linear_acceleration + self.W_gravity
                     
         p_W_Ii_new = p_W_Ii + self.v_W_Ii * dt + 0.5 * linear_acceleration * dt**2
         v_W_Ii_new = self.v_W_Ii + linear_acceleration * dt

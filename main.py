@@ -137,9 +137,8 @@ elif noise_level == 'real':
     accelerometer_random_walk = euroc.accelerometer_random_walk
     gyroscope_random_walk = euroc.gyroscope_random_walk
 
-#* Gravity convention: the generated datasets simulate an accelerometer measuring R^T (a + g),
-#* while a real accelerometer measures R^T (a - g). Flipping W_gravity makes the filter consistent with real data.
-W_gravity = np.array([0, 0, 9.81]) if source == 'euroc' else np.array([0, 0, -9.81])
+#* Gravity in the world frame (z up). Accelerometers, real and simulated, measure the specific force f = R^T (a - g)
+W_gravity = np.array([0, 0, -9.81])
 
 #* Real IMU biases are not zero: estimate the gyroscope bias at the (static) start and give the filter
 #* an initial uncertainty on the state, so the biases can be corrected by the visual updates

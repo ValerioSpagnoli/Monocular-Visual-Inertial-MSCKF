@@ -152,7 +152,7 @@ class MeasurementsGenerator():
             rotation = poses[i].R
             
             velocity = (position - prev_position) / self.delta_t
-            linear_acceleration = prev_rotation.T @ ( ((velocity - prev_velocity) / self.delta_t) + W_gravity )
+            linear_acceleration = prev_rotation.T @ ( ((velocity - prev_velocity) / self.delta_t) - W_gravity ) # specific force f = R^T (a - g)
 
             q_prev = R2quaternion(prev_rotation)
             q_current = R2quaternion(rotation)
