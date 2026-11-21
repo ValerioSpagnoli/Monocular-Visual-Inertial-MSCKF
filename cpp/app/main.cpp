@@ -50,6 +50,7 @@ struct Options {
     double min_parallax = 45.0;
     int max_track_length = 10;
     bool no_update_on_prune = false;
+    LoopClosureParameters loop;
 };
 
 /// IMU noise of the generated datasets for each noise level (continuous-time densities).
@@ -96,6 +97,10 @@ int main(int argc, char** argv) {
     app.add_option("--min_parallax", o.min_parallax, "Parallax that triggers the use of a tracked feature [deg]");
     app.add_option("--max_track_length", o.max_track_length, "Also use tracked features with this many observations (0 disables it)");
     app.add_flag("--no_update_on_prune", o.no_update_on_prune, "Do not use the features of the pruned clones");
+    app.add_option("--lc_descriptor_similarity", o.loop.min_descriptor_similarity, "Loop closure: minimum cosine similarity of a descriptor match");
+    app.add_option("--lc_min_inliers", o.loop.min_inliers, "Loop closure: PnP inliers to accept a loop");
+    app.add_option("--lc_pnp_threshold", o.loop.pnp_threshold, "Loop closure: reprojection error of a PnP inlier [px]");
+    app.add_option("--lc_recent_excluded", o.loop.recent_keyframes_excluded, "Loop closure: candidates must be older than this many keyframes");
     CLI11_PARSE(app, argc, argv);
 
     //* Sequence
@@ -140,7 +145,7 @@ int main(int argc, char** argv) {
     p.zupt_max_disparity = o.zupt_max_disparity;
     p.max_track_length = o.max_track_length;
     p.update_features_on_prune = !o.no_update_on_prune;
-    VioSystem system(p, LoopClosureParameters{}, o.loop_closure);
+    VioSystem system(p, o.loop, o.loop_closure);
 
     XFeatExtractor::Options extractor_options;
     extractor_options.top_k = o.top_k;
@@ -224,8 +229,12 @@ int main(int argc, char** argv) {
                   filter.gatingRejections(), filter.triangulationRejections(), filter.zeroVelocityUpdates());
     summary += buffer;
     if (system.loopClosure()) {
-        std::snprintf(buffer, sizeof(buffer), " - Loop closure: %zu keyframes, %zu loops\n", system.loopClosure()->graph().nodes().size(),
-                      system.loopClosure()->loops().size());
+        const LoopClosureStatistics& s = system.loopClosure()->statistics();
+        std::snprintf(buffer, sizeof(buffer),
+                      " - Loop closure: %zu keyframes, %zu loops\n   - Mean 3D points per keyframe: %.1f\n   - Best global similarity: %.3f\n"
+                      "   - Discarded: %lld without landmarks, %lld below global similarity, %lld too few matches, %lld PnP, %lld implausible\n",
+                      system.loopClosure()->graph().nodes().size(), system.loopClosure()->loops().size(), s.mean_landmarks, s.best_global_similarity,
+                      s.keyframes_without_landmarks, s.below_global_similarity, s.too_few_matches, s.pnp_failed, s.implausible_correction);
         summary += buffer;
     }
     const double total = std::accumulate(loop_time.begin(), loop_time.end(), 0.0);

@@ -578,15 +578,25 @@ void Msckf::pruneCameraStates() {
     removeCameras(to_remove);
 }
 
-KeyframeObservations Msckf::currentObservations() const {
+KeyframeObservations Msckf::currentObservations(double min_parallax_degrees) const {
     KeyframeObservations observations;
     std::vector<Eigen::VectorXf> descriptors;
     for (const auto& [id, feature] : features_) {
         if (feature.camera_ids.empty() || feature.camera_ids.back() != imu_.id) continue;
         observations.keypoints.push_back(feature.keypoints.back());
         descriptors.push_back(feature.descriptors.back());
-        const auto point = triangulated_points_.find(id);
-        observations.points.push_back(point != triangulated_points_.end() ? std::optional<Vec3>(point->second) : std::nullopt);
+        std::optional<Vec3> point;
+        const auto triangulated = triangulated_points_.find(id);
+        if (triangulated != triangulated_points_.end()) {
+            point = triangulated->second;
+        } else if (feature.camera_ids.size() >= 3 &&
+                   angleBetweenDirections(feature.lines.front().direction, feature.lines.back().direction) * 180.0 / EIGEN_PI >= min_parallax_degrees) {
+            std::vector<Pose> poses;
+            for (long long camera_id : feature.camera_ids) poses.push_back(cameras_.at(camera_id).T_W_C);
+            const TriangulationResult result = triangulateFeature(poses, feature.keypoints, invK_, intersectionOfLines(feature.lines));
+            if (result.point && result.rms <= max_triangulation_error_) point = result.point;
+        }
+        observations.points.push_back(point);
     }
     if (!descriptors.empty()) {
         observations.descriptors.resize(static_cast<Eigen::Index>(descriptors.size()), descriptors.front().size());

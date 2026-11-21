@@ -47,6 +47,7 @@ std::optional<LoopDetection> LoopClosure::addKeyframe(double timestamp, const Po
         const Pose T_prev_curr = keyframes_.back().T_W_I_vio.inverse() * T_W_I;
         graph_.addEdge(index - 1, index, T_prev_curr, parameters_.odometry_sigma_p, parameters_.odometry_sigma_yaw, false);
     }
+    statistics_.mean_landmarks += (static_cast<double>(keyframe.landmark_rows.size()) - statistics_.mean_landmarks) / (keyframes_.size() + 1);
     keyframes_.push_back(std::move(keyframe));
 
     std::optional<LoopDetection> loop = detectLoop(index);
@@ -65,9 +66,14 @@ std::optional<LoopDetection> LoopClosure::detectLoop(int index) {
     // Candidates: older keyframes with the most similar global descriptor
     std::vector<std::pair<float, int>> scored;
     for (int k = 0; k + parameters_.recent_keyframes_excluded < index; ++k) {
-        if (keyframes_[k].global_descriptor.size() == 0 || keyframes_[k].landmark_rows.size() < static_cast<std::size_t>(parameters_.min_inliers)) continue;
+        if (keyframes_[k].global_descriptor.size() == 0 || keyframes_[k].landmark_rows.size() < static_cast<std::size_t>(parameters_.min_inliers)) {
+            ++statistics_.keyframes_without_landmarks;
+            continue;
+        }
         const float similarity = keyframes_[k].global_descriptor.dot(current.global_descriptor);
+        statistics_.best_global_similarity = std::max(statistics_.best_global_similarity, static_cast<double>(similarity));
         if (similarity >= parameters_.min_global_similarity) scored.emplace_back(similarity, k);
+        else ++statistics_.below_global_similarity;
     }
     std::sort(scored.begin(), scored.end(), std::greater<>());
     if (static_cast<int>(scored.size()) > parameters_.candidates) scored.resize(parameters_.candidates);
@@ -93,16 +99,25 @@ std::optional<LoopDetection> LoopClosure::detectLoop(int index) {
             points.push_back(candidate.landmarks_camera[static_cast<std::size_t>(r)]);
             observations.push_back(current.observations[static_cast<std::size_t>(c)]);
         }
-        if (static_cast<int>(points.size()) < parameters_.min_inliers) continue;
+        if (static_cast<int>(points.size()) < parameters_.min_inliers) {
+            ++statistics_.too_few_matches;
+            continue;
+        }
 
         // Pose of the candidate camera in the current camera, then of the current IMU in the candidate IMU
         const std::optional<PnPResult> pnp = solvePnPRansac(points, observations, parameters_.pnp_threshold / focal_, parameters_.min_inliers);
-        if (!pnp) continue;
+        if (!pnp) {
+            ++statistics_.pnp_failed;
+            continue;
+        }
         const Pose T_cand_curr = T_I_C_ * pnp->T_C_W.inverse() * T_I_C_.inverse();
 
         // Reject loops implying an implausible drift: compare with the relative odometry pose
         const Pose T_cand_curr_vio = candidate.T_W_I_vio.inverse() * current.T_W_I_vio;
-        if ((T_cand_curr.t - T_cand_curr_vio.t).norm() > parameters_.max_correction_distance) continue;
+        if ((T_cand_curr.t - T_cand_curr_vio.t).norm() > parameters_.max_correction_distance) {
+            ++statistics_.implausible_correction;
+            continue;
+        }
 
         const int inliers = static_cast<int>(pnp->inliers.size());
         if (!best || inliers > best->inliers) {

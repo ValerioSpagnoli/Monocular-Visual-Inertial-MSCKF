@@ -14,9 +14,9 @@ struct LoopClosureParameters {
     int recent_keyframes_excluded = 20;    // loop candidates must be older than this many keyframes
     int candidates = 5;                    // keyframes checked by geometric verification (best global similarity)
     double min_global_similarity = 0.7;    // cosine similarity of the global descriptors
-    double min_descriptor_similarity = 0.9;
-    int min_inliers = 25;                  // PnP inliers to accept a loop
-    double pnp_threshold = 3.0;            // reprojection error of a PnP inlier [px]
+    double min_descriptor_similarity = 0.7;   // XFeat descriptors change with the viewpoint of a revisit
+    int min_inliers = 15;                  // PnP inliers to accept a loop
+    double pnp_threshold = 5.0;            // reprojection error of a PnP inlier [px]
     double max_correction_distance = 5.0;  // reject loops implying a larger drift correction [m]
     double odometry_sigma_p = 0.02;        // [m] relative pose between consecutive keyframes
     double odometry_sigma_yaw = 0.005;     // [rad]
@@ -30,6 +30,17 @@ struct KeyframeObservations {
     std::vector<Vec2> keypoints;
     Eigen::MatrixXf descriptors;
     std::vector<std::optional<Vec3>> points;
+};
+
+/// Why loop candidates were discarded (diagnostics).
+struct LoopClosureStatistics {
+    long long keyframes_without_landmarks = 0;  // older keyframes skipped: fewer 3D points than min_inliers
+    long long below_global_similarity = 0;      // older keyframes below min_global_similarity
+    long long too_few_matches = 0;              // candidates with fewer descriptor matches than min_inliers
+    long long pnp_failed = 0;                   // candidates rejected by the geometric verification
+    long long implausible_correction = 0;       // candidates implying a drift above max_correction_distance
+    double best_global_similarity = 0.0;        // highest similarity seen, to tune the threshold
+    double mean_landmarks = 0.0;                // mean number of 3D points per keyframe
 };
 
 struct LoopDetection {
@@ -55,6 +66,7 @@ public:
 
     const PoseGraph4Dof& graph() const { return graph_; }
     const std::vector<LoopDetection>& loops() const { return loops_; }
+    const LoopClosureStatistics& statistics() const { return statistics_; }
 
 private:
     struct Keyframe {
@@ -77,6 +89,7 @@ private:
     std::vector<Keyframe> keyframes_;
     PoseGraph4Dof graph_;
     std::vector<LoopDetection> loops_;
+    LoopClosureStatistics statistics_;
     Pose correction_;  // T_W_corrected <- correction_ * T_W_vio (yaw and translation only)
 };
 

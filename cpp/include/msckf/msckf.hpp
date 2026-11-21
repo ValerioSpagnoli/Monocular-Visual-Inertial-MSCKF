@@ -101,8 +101,10 @@ public:
     const std::vector<long long>& gatedFeatureIds() const { return gated_feature_ids_; }
     const std::map<long long, Vec3>& triangulatedPoints() const { return triangulated_points_; }
 
-    /// Keypoints, descriptors and (if triangulated) world points of the features observed in the last image.
-    KeyframeObservations currentObservations() const;
+    /// Keypoints, descriptors and world points of the features observed in the last image. Points come from the last
+    /// triangulation of the filter or, for tracks with at least 3 observations and enough parallax not yet used in an
+    /// update, from a new triangulation on the current clone poses (only returned, the filter state is unchanged).
+    KeyframeObservations currentObservations(double min_parallax_degrees = 2.0) const;
 
     // Counters
     long long epipolarRejections() const { return epipolar_rejections_; }
