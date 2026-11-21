@@ -35,6 +35,7 @@ private:
 
     std::unique_ptr<rerun::RecordingStream> rec_;
     std::vector<std::array<float, 3>> estimate_trajectory_, ground_truth_trajectory_, corrected_trajectory_;
+    std::vector<std::pair<double, Pose>> odometry_;  // timestamped odometry poses, to recompute the corrected trajectory
     std::map<long long, Vec3> landmarks_;  // history of triangulated points (the filter keeps only the live ones)
     std::optional<Pose> last_ground_truth_;
     long long frames_ = 0;

@@ -135,4 +135,11 @@ TEST_CASE("Loop closure recognizes a revisited place and corrects the drift") {
     const Pose odometry = Pose(rotationZ(0.003 * (n + 4)), Vec3(0.01 * (n + 4), -0.005 * (n + 4), 0.0)) * truth;
     CHECK_FALSE(loop_closure.addKeyframe(0.1 * (n + 4), odometry, KeyframeObservations{}).has_value());
     CHECK((loop_closure.correct(odometry).t - truth.t).norm() < 0.1 * (odometry.t - truth.t).norm());
+
+    // Past poses are corrected with the optimized graph: halfway between two keyframes of the drifted lap
+    const int k = n / 2;
+    const double s = (k + 0.5) / n;
+    const Pose truth_past = circlePose(2.0 * EIGEN_PI * s, 3.0);
+    const Pose odometry_past = Pose(rotationZ(0.003 * (k + 0.5)), Vec3(0.01 * (k + 0.5), -0.005 * (k + 0.5), 0.0)) * truth_past;
+    CHECK((loop_closure.correctAt(0.1 * (k + 0.5), odometry_past).t - truth_past.t).norm() < 0.5 * (odometry_past.t - truth_past.t).norm());
 }

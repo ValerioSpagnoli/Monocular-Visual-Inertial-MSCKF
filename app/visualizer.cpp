@@ -141,13 +141,26 @@ void Visualizer::logFrame(const VioSystem& system, const cv::Mat& image, double 
     estimate_trajectory_.push_back({static_cast<float>(estimate.t.x()), static_cast<float>(estimate.t.y()), static_cast<float>(estimate.t.z())});
     if (last_ground_truth_) ground_truth_trajectory_.push_back({static_cast<float>(last_ground_truth_->t.x()), static_cast<float>(last_ground_truth_->t.y()),
                                                                 static_cast<float>(last_ground_truth_->t.z())});
-    if (system.loopClosure()) {
-        const Pose corrected = system.correctedPose();
-        corrected_trajectory_.push_back({static_cast<float>(corrected.t.x()), static_cast<float>(corrected.t.y()), static_cast<float>(corrected.t.z())});
+    bool new_loop = false;
+    if (const LoopClosure* loop_closure = system.loopClosure()) {
+        // After a new loop the whole past trajectory is corrected with the optimized graph (as the keyframes),
+        // otherwise only the current pose is appended
+        odometry_.emplace_back(timestamp, estimate);
+        auto append = [&](double t, const Pose& T_W_I) {
+            const Vec3 p = loop_closure->correctAt(t, T_W_I).t;
+            corrected_trajectory_.push_back({static_cast<float>(p.x()), static_cast<float>(p.y()), static_cast<float>(p.z())});
+        };
+        new_loop = loop_closure->loops().size() != logged_loops_;
+        if (new_loop) {
+            corrected_trajectory_.clear();
+            for (const auto& [t, T_W_I] : odometry_) append(t, T_W_I);
+        } else {
+            append(timestamp, estimate);
+        }
     }
     for (const auto& [id, point] : filter.triangulatedPoints()) landmarks_[id] = point;
     if (system.loopClosure()) logLoopClosure(*system.loopClosure());
-    if (frames_ % 5 == 0) {
+    if (frames_ % 5 == 0 || new_loop) {
         rec_->log("world/est/trajectory", rerun::LineStrips3D(strip(estimate_trajectory_)).with_colors(kEstimate).with_radii(0.01f));
         if (ground_truth_trajectory_.size() > 1) rec_->log("world/gt/trajectory", rerun::LineStrips3D(strip(ground_truth_trajectory_)).with_colors(kGroundTruth).with_radii(0.01f));
         if (corrected_trajectory_.size() > 1) rec_->log("world/corrected/trajectory", rerun::LineStrips3D(strip(corrected_trajectory_)).with_colors(kCorrected).with_radii(0.01f));

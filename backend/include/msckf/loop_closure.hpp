@@ -64,6 +64,11 @@ public:
     /// VIO pose corrected with the drift estimated at the last keyframe.
     Pose correct(const Pose& T_W_I) const;
 
+    /// VIO pose of a past instant corrected with the current graph: the drift of the keyframes before and after the
+    /// timestamp, interpolated in yaw and translation (the last correction after the last keyframe). Unlike correct(),
+    /// it uses the poses of all keyframes after the latest optimization, so it gives the corrected past trajectory.
+    Pose correctAt(double timestamp, const Pose& T_W_I) const;
+
     const PoseGraph4Dof& graph() const { return graph_; }
     const std::vector<LoopDetection>& loops() const { return loops_; }
     const LoopClosureStatistics& statistics() const { return statistics_; }
@@ -81,6 +86,8 @@ private:
 
     std::optional<LoopDetection> detectLoop(int index);
     void updateCorrection();
+    /// Correction mapping the odometry pose of keyframe `index` onto its pose-graph pose (yaw and translation).
+    Pose keyframeCorrection(std::size_t index) const;
 
     LoopClosureParameters parameters_;
     Mat3 invK_;

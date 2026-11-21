@@ -131,14 +131,33 @@ std::optional<LoopDetection> LoopClosure::detectLoop(int index) {
     return best;
 }
 
-void LoopClosure::updateCorrection() {
-    // Drift at the last keyframe: optimized pose vs odometry pose, in yaw and translation
-    const PoseGraph4Dof::Node& node = graph_.nodes().back();
-    const Pose& vio = keyframes_.back().T_W_I_vio;
+Pose LoopClosure::keyframeCorrection(std::size_t index) const {
+    // Drift at a keyframe: optimized pose vs odometry pose, in yaw and translation
+    const PoseGraph4Dof::Node& node = graph_.nodes()[index];
+    const Pose& vio = keyframes_[index].T_W_I_vio;
     const Mat3 R = rotationZ(node.yaw - yawOf(vio.R));
-    correction_ = Pose(R, node.p - R * vio.t);
+    return Pose(R, node.p - R * vio.t);
 }
 
+void LoopClosure::updateCorrection() { correction_ = keyframeCorrection(keyframes_.size() - 1); }
+
 Pose LoopClosure::correct(const Pose& T_W_I) const { return correction_ * T_W_I; }
+
+Pose LoopClosure::correctAt(double timestamp, const Pose& T_W_I) const {
+    if (keyframes_.empty()) return T_W_I;
+    // First keyframe after the timestamp
+    const auto after = std::upper_bound(keyframes_.begin(), keyframes_.end(), timestamp,
+                                        [](double t, const Keyframe& keyframe) { return t < keyframe.timestamp; });
+    if (after == keyframes_.end()) return correct(T_W_I);
+    const std::size_t next = static_cast<std::size_t>(after - keyframes_.begin());
+    if (next == 0) return keyframeCorrection(0) * T_W_I;
+    const Pose a = keyframeCorrection(next - 1), b = keyframeCorrection(next);
+    const double s = (timestamp - keyframes_[next - 1].timestamp) / (keyframes_[next].timestamp - keyframes_[next - 1].timestamp);
+    double yaw_a = yawOf(a.R), yaw_b = yawOf(b.R);
+    while (yaw_b - yaw_a > EIGEN_PI) yaw_b -= 2.0 * EIGEN_PI;
+    while (yaw_b - yaw_a < -EIGEN_PI) yaw_b += 2.0 * EIGEN_PI;
+    const Pose correction(rotationZ((1.0 - s) * yaw_a + s * yaw_b), (1.0 - s) * a.t + s * b.t);
+    return correction * T_W_I;
+}
 
 }  // namespace msckf
