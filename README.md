@@ -38,7 +38,7 @@ The original Python implementation of the thesis has been ported to **C++17** (i
 |---|---|---|---|
 | Core | `cpp/include/msckf`, `cpp/src` | Eigen | MSCKF (IMU propagation with observability constraint, Gauss-Newton triangulation, null-space update, χ² gating, zero-velocity updates), loop closure with a 4-dof pose graph, `VioSystem` entry point. Builds unchanged with the Android NDK. |
 | Front-end | `cpp/frontend` | OpenCV, ONNX Runtime | XFeat keypoints and descriptors from `models/xfeat.onnx`, reproducing `XFeat.detectAndCompute`. |
-| Application | `cpp/app` | yaml-cpp, CLI11, Rerun C++ SDK | `msckf_run`: datasets, IMU generator, evaluation, visualization. |
+| Application | `cpp/app` | yaml-cpp, CLI11, Rerun C++ SDK | `msckf_run`: EuRoC datasets, evaluation, visualization. |
 
 See [cpp/README.md](cpp/README.md) for the core API and the Android build.
 
@@ -64,33 +64,23 @@ The datasets must be placed in the `data/` folder.
 ### EuRoC MAV (real IMU)
 Download the ASL-format sequences from the [ETH Research Collection](https://www.research-collection.ethz.ch/entities/researchdata/bcaf173e-5dac-484b-bc37-faf97a594f1f) and extract them as `data/euroc/<sequence>/mav0/` (only `cam0`, `imu0` and `state_groundtruth_estimate0` are needed). Calibration and IMU noise are read from the `sensor.yaml` files; the images are undistorted so that the filter uses a pinhole model.
 
-### TartanAir and PeringLab (generated IMU)
-These datasets provide images and ground-truth poses only: the IMU is generated from a smooth interpolation of the trajectory (so that the filter integration reproduces it exactly) plus white noise and bias random walks (`--noise_level low|mid|high`, or `none`). Structure:
-```
-data/<source>/camera_info.csv
-data/<source>/<sequence>/cam/000000.png ...
-data/<source>/<sequence>/trajectory.csv
-```
-- `camera_info.csv`: `R00,...,R22,fx,fy,px,py,w,h`, where `R` is the rotation of the optical camera frame (x right, y down, z forward) in the IMU frame. For TartanAir, whose poses are in the NED camera frame used as IMU frame: `0,0,1,1,0,0,0,1,0,320,320,320,240,640,480`.
-- `trajectory.csv`: TartanAir `x y z qx qy qz qw` (space separated, with a header line); PeringLab `timestamp,x,y,z,qw,qx,qy,qz`.
-
 ## Run
 ```bash
-pixi run main --source euroc --sequence V1_01_easy
-pixi run main --source tartanair --sequence P001 --noise_level mid --save_results
-pixi run main --source euroc --sequence V1_02_medium --loop_closure --no_viewer
+pixi run main --sequence V1_01_easy
+pixi run main --sequence V1_02_medium --loop_closure --save_results
+pixi run main --sequence V1_03_difficult --no_viewer
 ```
 Main options (`pixi run main --help` for all of them):
-- `--source` (`euroc`, `tartanair`, `peringlab`), `--sequence`, `--max_frames` (IMU samples), `--noise_level` (generated IMU)
+- `--sequence`, `--max_frames` (IMU samples), `--data` (dataset root, default `./data`)
 - `--loop_closure`: keyframe-based loop closure; the summary also reports the loop-corrected ATE
-- `--save_results`: `results.txt`, `trajectory.csv` and the Rerun recording in `data/<source>/<sequence>/results` (EuRoC) or `<noise_level>_noise`
+- `--save_results`: `results.txt`, `trajectory.csv` and the Rerun recording in `data/euroc/<sequence>/results`
 - `--no_viewer`: do not stream to Rerun
 - `--coreml`: run XFeat with CoreML on Apple hardware
-- Tuning: `--sigma_image`, `--imu_noise_scale` (real data, default ×10 on the datasheet white noise), `--imu_walk_scale`, `--epipolar_threshold`, `--max_triangulation_error`, `--zupt_max_disparity`, `--min_parallax`, `--max_track_length`
+- Tuning: `--sigma_image`, `--imu_noise_scale` (default ×10 on the datasheet white noise), `--imu_walk_scale`, `--epipolar_threshold`, `--max_triangulation_error`, `--zupt_max_disparity`, `--min_parallax`, `--max_track_length`
 
 ### Benchmark
 ```bash
-pixi run benchmark                  # EuRoC V1_01-03 and TartanAir P001, markdown table
+pixi run benchmark                  # EuRoC V1_01-03, markdown table
 pixi run benchmark --loop_closure   # extra options are forwarded to msckf_run
 ```
 

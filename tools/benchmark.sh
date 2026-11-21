@@ -7,7 +7,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RUN="$ROOT/build/cpp/msckf_run"
-SEQUENCES=("euroc V1_01_easy" "euroc V1_02_medium" "euroc V1_03_difficult" "tartanair P001 --noise_level mid")
+SEQUENCES=("euroc V1_01_easy" "euroc V1_02_medium" "euroc V1_03_difficult")
 
 # Number following a label in the output of msckf_run, empty if the label is missing
 field() { { grep -oE "$1 *[0-9.]+" <<< "$2" || true; } | head -1 | grep -oE "[0-9.]+$" || true; }

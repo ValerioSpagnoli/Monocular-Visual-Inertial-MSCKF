@@ -13,12 +13,12 @@ namespace msckf {
 bool Evaluator::add(const Pose& estimate, const Mat3& covariance_position, const Mat3& covariance_orientation,
                     const std::optional<Pose>& ground_truth_raw, const std::optional<Pose>& corrected) {
     if (!ground_truth_raw) return false;
-    if (align_ && !T_est_gt_) {
+    if (!T_est_gt_) {
         // Roll and pitch are observable, so only yaw (about gravity, z in both frames) and position are aligned
         const Mat3 R_yaw = rotationZ(yawOf(estimate.R * ground_truth_raw->R.transpose()));
         T_est_gt_ = Pose(R_yaw, estimate.t - R_yaw * ground_truth_raw->t);
     }
-    const Pose ground_truth = T_est_gt_ ? *T_est_gt_ * *ground_truth_raw : *ground_truth_raw;
+    const Pose ground_truth = *T_est_gt_ * *ground_truth_raw;
     if (last_ground_truth_) distance_ += (ground_truth.t - last_ground_truth_->t).norm();
     last_ground_truth_ = ground_truth;
 

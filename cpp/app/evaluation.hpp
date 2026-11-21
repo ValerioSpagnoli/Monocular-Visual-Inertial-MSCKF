@@ -9,12 +9,10 @@ namespace msckf {
 
 /// Accuracy and consistency of the estimate against the ground truth, accumulated at every IMU step.
 /// Position errors are in the world frame and orientation errors are the local error of the filter
-/// (R_true = R_est exp(δθ)), i.e. in the frames of its covariance. Real datasets have the ground truth in their own
-/// world frame: it is aligned with 4 dof (position and yaw) at its first available pose.
+/// (R_true = R_est exp(δθ)), i.e. in the frames of its covariance. The ground truth is in its own world frame: it is
+/// aligned with 4 dof (position and yaw) at its first available pose.
 class Evaluator {
 public:
-    explicit Evaluator(bool align_ground_truth) : align_(align_ground_truth) {}
-
     /// estimate: odometry pose; covariance_position/orientation: 3x3 blocks of the filter; corrected: pose after
     /// loop closure (optional). Returns false if there is no ground truth for this step.
     bool add(const Pose& estimate, const Mat3& covariance_position, const Mat3& covariance_orientation,
@@ -27,7 +25,6 @@ public:
     Vec3 lastPositionError() const { return last_position_error_; }
 
 private:
-    bool align_;
     std::optional<Pose> T_est_gt_;  // ground-truth world -> estimator world
     std::optional<Pose> last_ground_truth_;
     long long steps_ = 0;

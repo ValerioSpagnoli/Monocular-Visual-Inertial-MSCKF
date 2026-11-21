@@ -1,9 +1,7 @@
 #include "dataset.hpp"
 
 #include <algorithm>
-#include <filesystem>
 #include <fstream>
-#include <random>
 #include <sstream>
 #include <stdexcept>
 
@@ -11,8 +9,6 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <yaml-cpp/yaml.h>
-
-namespace fs = std::filesystem;
 
 namespace msckf {
 
@@ -45,10 +41,6 @@ Pose matrixToPose(const std::vector<double>& data) {
 
 std::vector<double> yamlVector(const YAML::Node& node) { return node.as<std::vector<double>>(); }
 
-Mat3 quaternionToRotation(double qw, double qx, double qy, double qz) {
-    return Eigen::Quaterniond(qw, qx, qy, qz).normalized().toRotationMatrix();
-}
-
 }  // namespace
 
 cv::Mat Sequence::loadImage(std::size_t index) const {
@@ -66,8 +58,6 @@ Sequence loadEuroc(const std::string& root, const std::string& name) {
     const YAML::Node camera = YAML::LoadFile(mav + "cam0/sensor.yaml");
     const YAML::Node imu = YAML::LoadFile(mav + "imu0/sensor.yaml");
     Sequence sequence;
-    sequence.real_imu = true;
-    sequence.align_ground_truth = true;
 
     //* Calibration: images are undistorted once so that the filter keeps its pinhole model
     const std::vector<double> intrinsics = yamlVector(camera["intrinsics"]);
@@ -127,168 +117,6 @@ Sequence loadEuroc(const std::string& root, const std::string& name) {
         const double span = gt_times[k] - gt_times[j];
         const double s = span > 0 ? (m.timestamp - gt_times[j]) / span : 0.0;
         sequence.ground_truth.emplace_back(Pose(gt_rotations[j].slerp(s, gt_rotations[k]).toRotationMatrix(), (1 - s) * gt_positions[j] + s * gt_positions[k]));
-    }
-    return sequence;
-}
-
-//* Photorealistic datasets with generated IMU
-//* ========================================================================================== *//
-
-Pchip::Pchip(const std::vector<double>& times, const std::vector<Vec3>& values) : times_(times), values_(values), slopes_(values.size()) {
-    // Derivatives as scipy.interpolate.PchipInterpolator (Fritsch-Carlson, one-sided shape-preserving ends)
-    const std::size_t n = times.size();
-    if (n < 2) throw std::invalid_argument("PCHIP needs at least two points");
-    std::vector<double> h(n - 1);
-    std::vector<Vec3> m(n - 1);
-    for (std::size_t k = 0; k + 1 < n; ++k) {
-        h[k] = times[k + 1] - times[k];
-        m[k] = (values[k + 1] - values[k]) / h[k];
-    }
-    auto sign = [](double x) { return (x > 0) - (x < 0); };
-    for (int c = 0; c < 3; ++c) {
-        if (n == 2) {
-            slopes_[0](c) = slopes_[1](c) = m[0](c);
-            continue;
-        }
-        for (std::size_t k = 1; k + 1 < n; ++k) {
-            const double m0 = m[k - 1](c), m1 = m[k](c);
-            if (sign(m0) != sign(m1) || m0 == 0.0 || m1 == 0.0) {
-                slopes_[k](c) = 0.0;
-            } else {
-                const double w1 = 2 * h[k] + h[k - 1], w2 = h[k] + 2 * h[k - 1];
-                slopes_[k](c) = (w1 + w2) / (w1 / m0 + w2 / m1);
-            }
-        }
-        auto edge = [&](double h0, double h1, double m0, double m1) {
-            double d = ((2 * h0 + h1) * m0 - h0 * m1) / (h0 + h1);
-            if (sign(d) != sign(m0)) d = 0.0;
-            else if (sign(m0) != sign(m1) && std::abs(d) > 3 * std::abs(m0)) d = 3 * m0;
-            return d;
-        };
-        slopes_[0](c) = edge(h[0], h[1], m[0](c), m[1](c));
-        slopes_[n - 1](c) = edge(h[n - 2], h[n - 3], m[n - 2](c), m[n - 3](c));
-    }
-}
-
-std::size_t Pchip::segment(double t) const {
-    const auto upper = std::upper_bound(times_.begin(), times_.end(), t);
-    if (upper == times_.begin()) return 0;
-    return std::min(static_cast<std::size_t>(upper - times_.begin()) - 1, times_.size() - 2);
-}
-
-Vec3 Pchip::value(double t) const {
-    const std::size_t k = segment(t);
-    const double h = times_[k + 1] - times_[k], s = t - times_[k];
-    const Vec3 m = (values_[k + 1] - values_[k]) / h;
-    const Vec3 c2 = (3 * m - 2 * slopes_[k] - slopes_[k + 1]) / h;
-    const Vec3 c3 = (slopes_[k] + slopes_[k + 1] - 2 * m) / (h * h);
-    return values_[k] + slopes_[k] * s + c2 * s * s + c3 * s * s * s;
-}
-
-Vec3 Pchip::derivative(double t) const {
-    const std::size_t k = segment(t);
-    const double h = times_[k + 1] - times_[k], s = t - times_[k];
-    const Vec3 m = (values_[k + 1] - values_[k]) / h;
-    const Vec3 c2 = (3 * m - 2 * slopes_[k] - slopes_[k + 1]) / h;
-    const Vec3 c3 = (slopes_[k] + slopes_[k + 1] - 2 * m) / (h * h);
-    return slopes_[k] + 2 * c2 * s + 3 * c3 * s * s;
-}
-
-Sequence loadPhotorealistic(const std::string& root, const std::string& source, const std::string& name, const ImuNoise& noise, unsigned seed) {
-    const std::string folder = root + "/" + source + "/" + name + "/";
-    const bool tartanair = source == "tartanair";
-    Sequence sequence;
-    sequence.imu_noise = noise;
-
-    //* Camera: intrinsics and rotation of the optical frame in the IMU frame
-    const auto info = readTable(root + "/" + source + "/camera_info.csv", ',').front();
-    std::vector<double> values;
-    for (const auto& v : info) values.push_back(std::stod(v));
-    Mat3 R_I_C;
-    for (int k = 0; k < 9; ++k) R_I_C(k / 3, k % 3) = values[static_cast<std::size_t>(k)];
-    sequence.T_I_C = Pose(R_I_C, Vec3::Zero());
-    sequence.K << values[9], 0.0, values[11], 0.0, values[10], values[12], 0.0, 0.0, 1.0;
-    sequence.width = static_cast<int>(values[13]);
-    sequence.height = static_cast<int>(values[14]);
-
-    //* Trajectory: TartanAir poses are in the NED camera frame (= IMU frame), PeringLab poses are camera poses
-    std::vector<Pose> poses;
-    for (const auto& row : readTable(folder + "trajectory.csv", tartanair ? ' ' : ',')) {
-        if (tartanair) poses.emplace_back(quaternionToRotation(std::stod(row[6]), std::stod(row[3]), std::stod(row[4]), std::stod(row[5])),
-                                          Vec3(std::stod(row[0]), std::stod(row[1]), std::stod(row[2])));
-        else poses.emplace_back(quaternionToRotation(std::stod(row[4]), std::stod(row[5]), std::stod(row[6]), std::stod(row[7])),
-                                Vec3(std::stod(row[1]), std::stod(row[2]), std::stod(row[3])));
-        if (!tartanair) poses.back() = poses.back() * sequence.T_I_C.inverse();  // camera pose -> IMU pose
-    }
-    std::vector<std::string> image_paths;
-    for (const auto& entry : fs::directory_iterator(folder + "cam")) image_paths.push_back(entry.path().string());
-    std::sort(image_paths.begin(), image_paths.end());
-    const std::size_t n = std::min(poses.size(), image_paths.size());
-
-    //* Keyframes every 0.05 s in the frame of the first pose, after a static start of 0.1 s (gravity initialization)
-    const Pose T_0_W = poses.front().inverse();
-    constexpr double frame_period = 0.05, static_duration = 0.1;
-    std::vector<double> key_times;
-    std::vector<Vec3> key_positions;
-    std::vector<Eigen::Quaterniond> key_rotations;
-    for (int k = 0; k < 3; ++k) {
-        key_times.push_back(k * frame_period);
-        key_positions.push_back(Vec3::Zero());
-        key_rotations.push_back(Eigen::Quaterniond::Identity());
-        sequence.images.push_back({k * frame_period, image_paths[0]});
-    }
-    for (std::size_t i = 1; i < n; ++i) {
-        const Pose T = T_0_W * poses[i];
-        key_times.push_back(static_duration + i * frame_period);
-        key_positions.push_back(T.t);
-        key_rotations.emplace_back(T.R);
-        sequence.images.push_back({static_duration + i * frame_period, image_paths[i]});
-    }
-
-    //* IMU at 9 samples per frame: rotations by slerp, positions with spline velocities and the trapezoidal rule, so
-    //* that ImuState::integrate reproduces the ground truth exactly
-    const Pchip spline(key_times, key_positions);
-    constexpr int samples_per_frame = 9;
-    std::vector<double> times;
-    for (std::size_t k = 0; k + 1 < key_times.size(); ++k)
-        for (int s = 0; s < samples_per_frame; ++s) times.push_back(key_times[k] + (key_times[k + 1] - key_times[k]) * s / samples_per_frame);
-    times.push_back(key_times.back());
-
-    std::vector<Mat3> rotations(times.size());
-    std::vector<Vec3> velocities(times.size()), positions(times.size());
-    for (std::size_t k = 0; k < times.size(); ++k) {
-        const std::size_t j = std::min<std::size_t>(static_cast<std::size_t>(std::upper_bound(key_times.begin(), key_times.end(), times[k]) - key_times.begin()), key_times.size() - 1);
-        const std::size_t i = j == 0 ? 0 : j - 1;
-        const double s = j == i ? 0.0 : (times[k] - key_times[i]) / (key_times[j] - key_times[i]);
-        rotations[k] = key_rotations[i].slerp(s, key_rotations[j]).toRotationMatrix();
-        velocities[k] = spline.derivative(times[k]);
-    }
-    positions[0] = spline.value(times[0]);
-    const Vec3 gravity(0.0, 0.0, -9.81);
-
-    std::mt19937 rng(seed);
-    std::normal_distribution<double> normal(0.0, 1.0);
-    auto gaussian = [&]() { return Vec3(normal(rng), normal(rng), normal(rng)); };
-    Vec3 accelerometer_bias = Vec3::Zero(), gyroscope_bias = Vec3::Zero();
-
-    sequence.imu.push_back({times[0], Vec3::Zero(), rotations[0].transpose() * (-gravity)});  // static start
-    sequence.ground_truth.emplace_back(Pose(rotations[0], positions[0]));
-    for (std::size_t k = 0; k + 1 < times.size(); ++k) {
-        const double dt = times[k + 1] - times[k];
-        const Vec3 angular_velocity = logSO3(rotations[k].transpose() * rotations[k + 1]) / dt;
-        const Vec3 acceleration = (velocities[k + 1] - velocities[k]) / dt;
-        positions[k + 1] = positions[k] + 0.5 * (velocities[k] + velocities[k + 1]) * dt;
-        const Vec3 specific_force = rotations[k].transpose() * (acceleration - gravity);
-
-        // Continuous densities -> per-sample values: white noise sigma / sqrt(dt), bias random walk sigma * sqrt(dt)
-        accelerometer_bias += noise.accelerometer_random_walk * std::sqrt(dt) * gaussian();
-        gyroscope_bias += noise.gyroscope_random_walk * std::sqrt(dt) * gaussian();
-        ImuMeasurement m;
-        m.timestamp = times[k + 1];
-        m.linear_acceleration = specific_force + accelerometer_bias + noise.accelerometer_noise_density / std::sqrt(dt) * gaussian();
-        m.angular_velocity = angular_velocity + gyroscope_bias + noise.gyroscope_noise_density / std::sqrt(dt) * gaussian();
-        sequence.imu.push_back(m);
-        sequence.ground_truth.emplace_back(Pose(rotations[k + 1], positions[k + 1]));
     }
     return sequence;
 }

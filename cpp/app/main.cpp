@@ -1,8 +1,8 @@
 // msckf_run: runs the visual-inertial MSCKF on a dataset sequence, evaluates it against the ground truth and
 // optionally streams it to Rerun.
 //
-//   msckf_run --source euroc --sequence V1_01_easy
-//   msckf_run --source tartanair --sequence P001 --noise_level mid --save_results
+//   msckf_run --sequence V1_01_easy
+//   msckf_run --sequence V1_02_medium --loop_closure --save_results
 
 #include <chrono>
 #include <cstdio>
@@ -30,7 +30,6 @@ struct Options {
     std::string source = "euroc";
     std::string sequence = "V1_01_easy";
     std::string model = "models/xfeat.onnx";
-    std::string noise_level = "mid";
     long long max_frames = 1'000'000;
     bool save_results = false;
     bool no_viewer = false;
@@ -38,7 +37,6 @@ struct Options {
     bool loop_closure = false;
     bool coreml = false;
     int top_k = 300;
-    unsigned seed = 42;
     double sigma_image = 2.0;
     double max_triangulation_error = 6.0;
     double zupt_max_disparity = 1.0;
@@ -53,14 +51,6 @@ struct Options {
     LoopClosureParameters loop;
 };
 
-/// IMU noise of the generated datasets for each noise level (continuous-time densities).
-ImuNoise generatedNoise(const std::string& level) {
-    if (level == "none") return {0.0, 0.0, 0.0, 0.0};  // noise-free IMU, to check the generator against the integration
-    if (level == "low") return {0.001, 0.0001, 0.0001, 0.00001};
-    if (level == "high") return {0.01, 0.001, 0.001, 0.0001};
-    return {0.005, 0.0005, 0.0005, 0.00005};
-}
-
 std::string formatTime(const std::vector<double>& times) {
     const double mean = times.empty() ? 0.0 : std::accumulate(times.begin(), times.end(), 0.0) / times.size();
     char buffer[128];
@@ -74,10 +64,9 @@ int main(int argc, char** argv) {
     Options o;
     CLI::App app{"Monocular visual-inertial MSCKF"};
     app.add_option("--data", o.data, "Dataset root folder");
-    app.add_option("--source", o.source, "Dataset source")->check(CLI::IsMember({"euroc", "tartanair", "peringlab"}));
-    app.add_option("--sequence", o.sequence, "Sequence name (V1_01_easy, P001, ...)");
+    app.add_option("--source", o.source, "Dataset source")->check(CLI::IsMember({"euroc"}));
+    app.add_option("--sequence", o.sequence, "Sequence name (V1_01_easy, MH_01_easy, ...)");
     app.add_option("--model", o.model, "XFeat ONNX model");
-    app.add_option("--noise_level", o.noise_level, "IMU noise of generated datasets")->check(CLI::IsMember({"none", "low", "mid", "high"}));
     app.add_option("--max_frames", o.max_frames, "Maximum number of IMU samples to process");
     app.add_flag("--save_results", o.save_results, "Save results, trajectories and the Rerun recording");
     app.add_flag("--no_viewer", o.no_viewer, "Do not stream to Rerun");
@@ -85,15 +74,14 @@ int main(int argc, char** argv) {
     app.add_flag("--loop_closure", o.loop_closure, "Enable loop closure on keyframes");
     app.add_flag("--coreml", o.coreml, "Run XFeat with CoreML (Apple GPU / Neural Engine)");
     app.add_option("--top_k", o.top_k, "XFeat keypoints per image");
-    app.add_option("--seed", o.seed, "Random seed of the IMU noise of generated datasets");
     app.add_option("--sigma_image", o.sigma_image, "Standard deviation of a keypoint measurement [px]");
     app.add_option("--max_triangulation_error", o.max_triangulation_error, "Maximum RMS reprojection error of a triangulated feature [px]");
     app.add_option("--zupt_max_disparity", o.zupt_max_disparity, "Zero-velocity update below this median feature displacement [px]");
     app.add_option("--epipolar_threshold", o.epipolar_threshold, "Sampson distance above which a match is rejected [px]");
-    app.add_option("--init_sigma_theta", o.init_sigma_theta, "Real datasets: initial orientation standard deviation [rad]");
-    app.add_option("--init_sigma_ba", o.init_sigma_ba, "Real datasets: initial accelerometer bias standard deviation [m/s^2]");
-    app.add_option("--imu_noise_scale", o.imu_noise_scale, "Real datasets: multiplier of the IMU white-noise densities");
-    app.add_option("--imu_walk_scale", o.imu_walk_scale, "Real datasets: multiplier of the IMU bias random-walk densities");
+    app.add_option("--init_sigma_theta", o.init_sigma_theta, "Initial orientation standard deviation [rad]");
+    app.add_option("--init_sigma_ba", o.init_sigma_ba, "Initial accelerometer bias standard deviation [m/s^2]");
+    app.add_option("--imu_noise_scale", o.imu_noise_scale, "Multiplier of the datasheet IMU white-noise densities");
+    app.add_option("--imu_walk_scale", o.imu_walk_scale, "Multiplier of the datasheet IMU bias random-walk densities");
     app.add_option("--min_parallax", o.min_parallax, "Parallax that triggers the use of a tracked feature [deg]");
     app.add_option("--max_track_length", o.max_track_length, "Also use tracked features with this many observations (0 disables it)");
     app.add_flag("--no_update_on_prune", o.no_update_on_prune, "Do not use the features of the pruned clones");
@@ -104,16 +92,13 @@ int main(int argc, char** argv) {
     CLI11_PARSE(app, argc, argv);
 
     //* Sequence
-    const bool real = o.source == "euroc";
-    Sequence sequence = real ? loadEuroc(o.data, o.sequence) : loadPhotorealistic(o.data, o.source, o.sequence, generatedNoise(o.noise_level), o.seed);
+    Sequence sequence = loadEuroc(o.data, o.sequence);
+    // Datasheet values underestimate the noise of a real IMU
     ImuNoise noise = sequence.imu_noise;
-    if (real) {
-        // Datasheet values underestimate the noise of a real IMU
-        noise.accelerometer_noise_density *= o.imu_noise_scale;
-        noise.gyroscope_noise_density *= o.imu_noise_scale;
-        noise.accelerometer_random_walk *= o.imu_walk_scale;
-        noise.gyroscope_random_walk *= o.imu_walk_scale;
-    }
+    noise.accelerometer_noise_density *= o.imu_noise_scale;
+    noise.gyroscope_noise_density *= o.imu_noise_scale;
+    noise.accelerometer_random_walk *= o.imu_walk_scale;
+    noise.gyroscope_random_walk *= o.imu_walk_scale;
     std::printf("Running VIO on %s %s: %zu IMU samples, %zu images\n", o.source.c_str(), o.sequence.c_str(), sequence.imu.size(), sequence.images.size());
 
     //* Filter
@@ -127,12 +112,10 @@ int main(int argc, char** argv) {
     p.accelerometer_random_walk = noise.accelerometer_random_walk;
     p.gyroscope_random_walk = noise.gyroscope_random_walk;
     p.gravity = Vec3(0.0, 0.0, -9.81);
-    if (real) {
-        // Real IMU biases are not zero: initial gyroscope bias from the static start, uncertain initial state
-        p.estimate_initial_gyroscope_bias = true;
-        p.initial_covariance_diagonal << Vec3::Constant(o.init_sigma_theta * o.init_sigma_theta), Vec3::Constant(0.005 * 0.005),
-            Vec3::Constant(0.01 * 0.01), Vec3::Constant(o.init_sigma_ba * o.init_sigma_ba), Vec3::Zero();
-    }
+    // Real IMU biases are not zero: initial gyroscope bias from the static start, uncertain initial state
+    p.estimate_initial_gyroscope_bias = true;
+    p.initial_covariance_diagonal << Vec3::Constant(o.init_sigma_theta * o.init_sigma_theta), Vec3::Constant(0.005 * 0.005),
+        Vec3::Constant(0.01 * 0.01), Vec3::Constant(o.init_sigma_ba * o.init_sigma_ba), Vec3::Zero();
     p.min_cosine_similarity = 0.95;
     p.use_parallax = true;
     p.min_parallax = o.min_parallax;
@@ -152,7 +135,7 @@ int main(int argc, char** argv) {
     extractor_options.use_coreml = o.coreml;
     const XFeatExtractor extractor(o.model, extractor_options);
 
-    const std::string results_folder = o.data + "/" + o.source + "/" + o.sequence + "/" + (real ? std::string("results") : o.noise_level + "_noise");
+    const std::string results_folder = o.data + "/" + o.source + "/" + o.sequence + "/results";
     if (o.save_results) std::filesystem::create_directories(results_folder);
     Visualizer visualizer(sequence, o.no_viewer ? std::nullopt : std::optional<std::string>(o.save_results ? results_folder + "/recording.rrd" : ""));
 
@@ -166,7 +149,7 @@ int main(int argc, char** argv) {
     std::size_t camera_index = 1;  // the first image only marks the end of the static initialization window
     std::future<std::pair<cv::Mat, FrameFeatures>> next_frame = std::async(std::launch::async, load, camera_index);
 
-    Evaluator evaluator(sequence.align_ground_truth);
+    Evaluator evaluator;
     std::vector<double> loop_time, loop_time_camera, loop_time_imu;
     std::ofstream trajectory;
     if (o.save_results) {
