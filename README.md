@@ -71,9 +71,9 @@ where:
 - `camera_info.csv` is the file which contains the camera information of the chosen dataset and must have the following structure:
   ```
   R00,R01,R02,R10,R11,R12,R20,R21,R22,fx,fy,px,py,w,h
-  0,0,1,-1,0,0,0,-1,0,320,320,320,240,640,480
+  0,0,1,1,0,0,0,1,0,320,320,320,240,640,480
   ```
-  with the correct values depending on the chosen dataset.
+  with the correct values depending on the chosen dataset. `R` is the rotation of the optical camera frame (x right, y down, z forward) in the IMU frame and `fx, fy, px, py, w, h` are the pinhole intrinsics. For TartanAir the poses are given in the NED camera frame (x forward, y right, z down), which is used as IMU frame, so `R` is the one above.
 - `trajectory.csv` is the file that contains the ground truth trajectory of the sequence. It has a different structure depending on the chosen source dataset. The currently supported datasets are:
   - **tartanair**: with the structure `'x'  'y'  'z'  'qx'  'qy'  'qz'  'qw'` (separator: space, i.e., `' '`)
   - **peringlab**: with the structure `'timestamp','x','y','z','qw','qx','qy','qz'` (separator: comma, i.e., `','`)

@@ -91,7 +91,8 @@ if source == 'euroc':
     
 else:
     camera_info = pd.read_csv(f'{BASE_DATASET_PATH}/{source}/camera_info.csv')
-    T_W_C = Isometry3D(np.array([[0,0,1], [-1,0,0], [0,-1,0]]),  np.zeros(3))
+    # Rotation of the optical camera frame (x right, y down, z forward) in the IMU frame
+    T_W_C = Isometry3D(camera_info.iloc[0][['R00', 'R01', 'R02', 'R10', 'R11', 'R12', 'R20', 'R21', 'R22']].values.astype(float).reshape(3, 3), np.zeros(3))
     K = np.array([[camera_info.iloc[0]['fx'], 0, camera_info.iloc[0]['px']],
                   [0, camera_info.iloc[0]['fy'], camera_info.iloc[0]['py']],
                   [0, 0, 1]])
