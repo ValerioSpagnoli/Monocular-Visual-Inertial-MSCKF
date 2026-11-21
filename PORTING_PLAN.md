@@ -103,7 +103,7 @@ Resta l'inclinazione su V1_01: il ground truth EuRoC dichiara b_a,y ≈ 0,55 m/s
 
 ### 2.0 Infrastruttura di test
 - [x] Aggiungere `pytest` alle dipendenze e un task `pixi run test`.
-- [ ] Test unitari su `geometry.py` (`Isometry3D`, `skew`, `intersection_of_lines`, `InverseDepthPoint`).
+- [x] Test unitari su `geometry.py` (`tests/test_geometry.py`), sull'IMU (`tests/test_imu.py`) e sui generatori (`tests/test_generators.py`).
 - [x] Test dei **Jacobiani** con differenze finite (`tests/test_jacobians.py`), sui metodi veri del filtro: `compute_jacobians`, `state_augmentation`, `correct`, la transizione OC e `epipolar_residual`. Convenzione: `R_vero = R·exp(δθ)` (JPL locale).
 - [x] NEES medio di posizione e orientazione nel riepilogo e nel pannello Rerun (su EuRoC, non ancora su dati sintetici).
 - [x] `--no_viewer` per valutazioni veloci; ATE RMSE, consistenza 3σ e contatori degli scarti nel riepilogo finale.
@@ -128,12 +128,14 @@ Resta l'inclinazione su V1_01: il ground truth EuRoC dichiara b_a,y ≈ 0,55 m/s
 - [x] Vincolo di osservabilità applicato a H_x: `H_f` va preso dal blocco modificato (`−A_p`), test `H_o·N = 0` sulla direzione di yaw.
 - [x] Modello di misura delle feature: Jacobiani calcolati sul punto scalato da ρ (posizione gonfiata della profondità) e re-inizializzazione inverse depth con la profondità lungo z invece della distanza lungo il raggio.
 - [x] Valutazione: errore di posizione nel frame del body confrontato con bound nel frame del mondo; allineamento del ground truth a 6 gradi di libertà che nascondeva l'errore iniziale di inclinazione → ora 4 gradi di libertà (posizione + yaw).
-- [ ] **Consistenza:** con σ = 1 px il filtro è troppo sicuro di sé (solo ~8 % dei passi dentro i 3σ). Possibili cause: rumore IMU non gonfiato, errore di allineamento iniziale incluso nell'ATE, triangolazione con poca parallasse.
+- [x] **Consistenza della propagazione:** il generatore sintetico non era integrabile esattamente (interpolazione lineare → salti di velocità). Ora (`e2eb507`) PCHIP + slerp e misure costruite per l'integratore del filtro. Con la sola IMU su P001 il NEES è ≈ 3–4 (prima 297 / 46).
+- [ ] **Consistenza degli update visivi:** su P001 il NEES di posizione è 4 con rumore IMU alto, 13 medio, 20–50 basso, indipendentemente da `sigma_image` → errore strutturale della parte visiva. Candidato principale: triangolazione per punto medio dei raggi invece di Gauss-Newton in inverse depth; poi verificare la soglia di 45° di parallasse e il pruning.
+- [ ] **Inclinazione/bias su EuRoC V1_01:** il ground truth ha b_a,y ≈ 0,55 m/s² (confermato dalla fase statica: 0,48), il filtro stima 0,14. Con moto quasi solo in yaw inclinazione e bias orizzontale sono poco separabili, ma il filtro si dichiara sicuro (osservabilità spuria non coperta dall'OC).
 - [ ] `prune_poorest_camera_states` può rimuovere la camera appena clonata o quelle più recenti → escludere gli ultimi N cloni.
 - [ ] `Q = Φ G Qc Gᵀ Φᵀ dt`: è un'approssimazione; valutare l'integrazione trapezoidale.
 - [ ] Calcolo di RTE/ROE in `main.py`: il fallback `(1 if gt > 0 else 0)` è sempre 0 nel ramo `gt == 0`; lo "smoothing" degli outlier altera le metriche → riportare anche i valori grezzi.
 - [x] Argomenti di default mutabili in `Isometry3D`, `IMU`, `InverseDepthPoint` (`da8f085`).
-- [ ] Rimuovere il codice morto (`prune_camera_states`, la versione commentata di `prune_poorest_camera_states`, `match_frames`).
+- [x] Rimosso il codice morto e il disegno di debug ancora calcolato a ogni frame.
 
 **Criterio di uscita:** tutti i test verdi, NEES nei bound χ², metriche ≥ baseline v0 → salvare la **baseline v1**.
 
