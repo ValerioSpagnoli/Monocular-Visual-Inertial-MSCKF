@@ -65,4 +65,12 @@ if(MSCKF_BUILD_TESTS)
   target_link_libraries(msckf_tests PRIVATE msckf_core Catch2::Catch2WithMain)
   enable_testing()
   add_test(NAME msckf_tests COMMAND msckf_tests)
+
+  if(MSCKF_BUILD_APP)
+    add_executable(msckf_app_tests tests/test_app.cpp app/dataset.cpp)
+    target_link_libraries(msckf_app_tests PRIVATE msckf_frontend yaml-cpp::yaml-cpp Catch2::Catch2WithMain)
+    target_compile_definitions(msckf_app_tests PRIVATE MSCKF_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
+                                                       MSCKF_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../models/xfeat.onnx")
+    add_test(NAME msckf_app_tests COMMAND msckf_app_tests)
+  endif()
 endif()

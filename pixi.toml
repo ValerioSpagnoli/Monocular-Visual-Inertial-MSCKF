@@ -67,7 +67,7 @@ test = "pytest -q tests"
 
 # C++ core
 build-cpp = "cmake -S cpp -B build/cpp -G Ninja -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$(which python) && cmake --build build/cpp"
-test-cpp = { cmd = "build/cpp/msckf_tests", depends-on = ["build-cpp"] }
+test-cpp = { cmd = "build/cpp/msckf_tests && build/cpp/msckf_app_tests", depends-on = ["build-cpp"] }
 build-android = "bash cpp/build_android.sh"
 
 # Main experiment scripts
