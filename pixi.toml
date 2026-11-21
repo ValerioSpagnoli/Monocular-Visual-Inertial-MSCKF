@@ -38,6 +38,16 @@ eigen = ">=3.4"
 pybind11 = ">=2.11"
 catch2 = ">=3.4"
 
+# C++ application (cpp/app): XFeat inference, datasets, command line, visualization
+onnxruntime-cpp = ">=1.20"
+librerun-sdk = "==0.43.2"
+yaml-cpp = ">=0.8"
+cli11 = ">=2.4"
+
+# Export of XFeat to ONNX (tools/export_xfeat_onnx.py)
+onnx = "*"
+onnxruntime = "*"
+
 [target.linux-64.dependencies]
 # CPU-only PyTorch build on Linux
 pytorch-cpu = ">=2.0"
