@@ -30,6 +30,18 @@ Key findings from the experiments include:
 
 These results highlight the system's potential for precise localization in resource-constrained environments, effectively balancing computational efficiency with estimation accuracy.   
 
+# Implementation
+
+The original Python implementation of the thesis has been ported to **C++17** (it is still available on the `main` branch and in the history). The code is organized in three layers:
+
+| Layer | Path | Dependencies | Purpose |
+|---|---|---|---|
+| Core | `cpp/include/msckf`, `cpp/src` | Eigen | MSCKF (IMU propagation with observability constraint, Gauss-Newton triangulation, null-space update, χ² gating, zero-velocity updates), loop closure with a 4-dof pose graph, `VioSystem` entry point. Builds unchanged with the Android NDK. |
+| Front-end | `cpp/frontend` | OpenCV, ONNX Runtime | XFeat keypoints and descriptors from `models/xfeat.onnx`, reproducing `XFeat.detectAndCompute`. |
+| Application | `cpp/app` | yaml-cpp, CLI11, Rerun C++ SDK | `msckf_run`: datasets, IMU generator, evaluation, visualization. |
+
+See [cpp/README.md](cpp/README.md) for the core API and the Android build.
+
 # Getting Started
 
 ## Clone
@@ -37,109 +49,56 @@ These results highlight the system's potential for precise localization in resou
 git clone --recursive git@github.com:ValerioSpagnoli/Monocular-Visual-Inertial-MSCKF.git
 ```
 
-## Installation 
-This project uses [Pixi](https://pixi.sh/latest/) as the package manager and virtual environment manager. Supported platforms are Linux (`linux-64`) and macOS on Apple Silicon (`osx-arm64`). To install the dependencies:
+## Installation
+This project uses [Pixi](https://pixi.sh/latest/) for the toolchain and all the dependencies (Linux `linux-64` and macOS on Apple Silicon `osx-arm64`):
 ```bash
-pixi install
+pixi run build-cpp    # build everything in build/cpp
+pixi run test-cpp     # unit tests
 ```
 
 Note: to install Pixi run `curl -fsSL https://pixi.sh/install.sh | bash`
 
 ## Datasets
-The datasets must be downloaded into the `data/` folder. The project has been tested using synthetic and photorealistic datasets from [TartanAir](https://theairlab.org/tartanair-dataset/) and [Pering Laboratory](https://peringlab.org/lmdata/), but it can be run with any sequence of RGB images and ground truth trajectory data (needed to generate synthetic IMU data).  
+The datasets must be placed in the `data/` folder.
 
-### Dataset structure
-The dataset structure must be as follows:
+### EuRoC MAV (real IMU)
+Download the ASL-format sequences from the [ETH Research Collection](https://www.research-collection.ethz.ch/entities/researchdata/bcaf173e-5dac-484b-bc37-faf97a594f1f) and extract them as `data/euroc/<sequence>/mav0/` (only `cam0`, `imu0` and `state_groundtruth_estimate0` are needed). Calibration and IMU noise are read from the `sensor.yaml` files; the images are undistorted so that the filter uses a pinhole model.
 
+### TartanAir and PeringLab (generated IMU)
+These datasets provide images and ground-truth poses only: the IMU is generated from a smooth interpolation of the trajectory (so that the filter integration reproduces it exactly) plus white noise and bias random walks (`--noise_level low|mid|high`, or `none`). Structure:
 ```
-├── data
-│   └── <source>
-│       ├── camera_info.csv
-│       └── <sequence>
-│           ├── cam 
-│           │   ├── 000000.png  # 1st image
-│           │   ├── 000001.png
-│           │   ├── 000002.png
-│           │   ├── ...
-│           │   └── 00000N.png  # Nth image
-│           └── trajectory.csv
+data/<source>/camera_info.csv
+data/<source>/<sequence>/cam/000000.png ...
+data/<source>/<sequence>/trajectory.csv
 ```
-
-where:
-- **source** can be, for example, `tartanair` (can be any name)
-- **sequence** can be, for example, `P001` (can be any name)
-- `camera_info.csv` is the file which contains the camera information of the chosen dataset and must have the following structure:
-  ```
-  R00,R01,R02,R10,R11,R12,R20,R21,R22,fx,fy,px,py,w,h
-  0,0,1,1,0,0,0,1,0,320,320,320,240,640,480
-  ```
-  with the correct values depending on the chosen dataset. `R` is the rotation of the optical camera frame (x right, y down, z forward) in the IMU frame and `fx, fy, px, py, w, h` are the pinhole intrinsics. For TartanAir the poses are given in the NED camera frame (x forward, y right, z down), which is used as IMU frame, so `R` is the one above.
-- `trajectory.csv` is the file that contains the ground truth trajectory of the sequence. It has a different structure depending on the chosen source dataset. The currently supported datasets are:
-  - **tartanair**: with the structure `'x'  'y'  'z'  'qx'  'qy'  'qz'  'qw'` (separator: space, i.e., `' '`)
-  - **peringlab**: with the structure `'timestamp','x','y','z','qw','qx','qy','qz'` (separator: comma, i.e., `','`)
-
-When the main script is run, other files will be automatically created by the `photorealistic_generator.py` module. The final structure of the data folder will be:
-
-```
-├── data
-│   └── <source>
-│       ├── camera_info.csv
-│       └── <sequence>
-│           ├── cam 
-│           │   ├── 000000.png  # 1st image
-│           │   ├── 000001.png
-│           │   ├── 000002.png
-│           │   ├── ...
-│           │   └── 00000N.png  # Nth image
-│           ├── camera.csv 
-│           ├── imu.csv
-│           ├── imu_gt.csv
-│           ├── <noise_level>
-│           │   ├── ATE_AOE.png
-│           │   ├── recording.rrd
-│           │   ├── results.txt
-│           │   └── RTE_ROE.png
-│           ├── trajectory.csv
-│           └── transforms_gt.csv
-```
-
-where the results of the experiment will be saved in the `<noise_level>` folder.
+- `camera_info.csv`: `R00,...,R22,fx,fy,px,py,w,h`, where `R` is the rotation of the optical camera frame (x right, y down, z forward) in the IMU frame. For TartanAir, whose poses are in the NED camera frame used as IMU frame: `0,0,1,1,0,0,0,1,0,320,320,320,240,640,480`.
+- `trajectory.csv`: TartanAir `x y z qx qy qz qw` (space separated, with a header line); PeringLab `timestamp,x,y,z,qw,qx,qy,qz`.
 
 ## Run
-To run the main script: 
 ```bash
-pixi run main
+pixi run main --source euroc --sequence V1_01_easy
+pixi run main --source tartanair --sequence P001 --noise_level mid --save_results
+pixi run main --source euroc --sequence V1_02_medium --loop_closure --no_viewer
 ```
+Main options (`pixi run main --help` for all of them):
+- `--source` (`euroc`, `tartanair`, `peringlab`), `--sequence`, `--max_frames` (IMU samples), `--noise_level` (generated IMU)
+- `--loop_closure`: keyframe-based loop closure; the summary also reports the loop-corrected ATE
+- `--save_results`: `results.txt`, `trajectory.csv` and the Rerun recording in `data/<source>/<sequence>/results` (EuRoC) or `<noise_level>_noise`
+- `--no_viewer`: do not stream to Rerun
+- `--coreml`: run XFeat with CoreML on Apple hardware
+- Tuning: `--sigma_image`, `--imu_noise_scale` (real data, default ×10 on the datasheet white noise), `--imu_walk_scale`, `--epipolar_threshold`, `--max_triangulation_error`, `--zupt_max_disparity`, `--min_parallax`, `--max_track_length`
 
-The script accepts the following command-line parameters:
-- `--source`: The name of the folder that identifies the source dataset (`tartanair`, `peringlab`, `synthetic`, `euroc`)
-- `--sequence`: The name of the folder that identifies the sequence on which the experiment will be performed (e.g., `P001`, `ME007`, `V1_01_easy`)
-- `--max_frames`: Maximum number of frames to process (integer, e.g., `1000`)
-- `--noise_level`: The noise level of the generated IMU data (choices: `low`, `mid`, `high`)
-- `--save_results`: Flag to save the results to the `<noise_level>` folder (no value needed)
-- `--backend`: Filter implementation, `python` (default) or `cpp` (requires `pixi run build-cpp`)
-- `--device`: Torch device used by XFeat (choices: `auto`, `cpu`, `mps`, `cuda`; default `auto` picks CUDA, then Apple GPU (MPS), then CPU)
-
-Example usage:
+### Benchmark
 ```bash
-pixi run main --source tartanair --sequence P001 --max_frames 1000 --noise_level high --save_results
-pixi run main --source euroc --sequence V1_01_easy --max_frames 30000 --save_results
-```
-
-### EuRoC MAV
-Download the ASL-format sequences from the [ETH Research Collection](https://www.research-collection.ethz.ch/entities/researchdata/bcaf173e-5dac-484b-bc37-faf97a594f1f) and extract them as `data/euroc/<sequence>/mav0/` (only `cam0`, `imu0` and `state_groundtruth_estimate0` are needed). IMU data is real, so `--noise_level` is ignored; calibration and IMU noise are read from the `sensor.yaml` files and the results are saved to `data/euroc/<sequence>/results/`.
-
-## C++ core (Android)
-The filter is also available as a C++17 library that depends only on Eigen, for the Android port: see [cpp/README.md](cpp/README.md).
-```bash
-pixi run build-cpp && pixi run test-cpp
-pixi run main --source euroc --sequence V1_01_easy --backend cpp
+pixi run benchmark                  # EuRoC V1_01-03 and TartanAir P001, markdown table
+pixi run benchmark --loop_closure   # extra options are forwarded to msckf_run
 ```
 
 ## Visualization
-The run is streamed to a [Rerun](https://rerun.io) viewer with a predefined layout:
-- **Map**: estimated (blue) and ground-truth (green) trajectories, current body poses, camera frustum with the live image, sliding window of camera clones, triangulated landmarks (grey; those used in the current update in orange) and the 3σ position uncertainty.
-- **Camera**: undistorted image with features and their tracks. Colors: orange = used in the EKF update, green = tracked, light blue = new, magenta = discarded by the χ² gating test, red = match discarded by the epipolar/homography test.
-- **Metrics** and **Filter status**: running ATE/RTE/ROE, consistency w.r.t. the 3σ bounds, feature counts, estimated IMU biases and loop rate.
+The run is streamed to a [Rerun](https://rerun.io) viewer: estimated (blue), ground-truth (green) and loop-corrected (orange) trajectories, body poses, the camera frustum with the live image, the sliding window of clones, the triangulated landmarks and the 3σ position uncertainty; the camera image shows the features and their tracks (orange = used in the EKF update, green = tracked, light blue = new, magenta = discarded by the χ² gating, red = match rejected by the epipolar/homography test); two text panels report the running metrics and the filter status.
 
-With `--save_results` the same stream is also written to `recording.rrd`, which can be reopened with `pixi run rerun <path>/recording.rrd`.
+## Regenerating the XFeat model
+`models/xfeat.onnx` is exported from the [XFeat](https://github.com/verlab/accelerated_features) submodule with PyTorch, in a separate environment:
+```bash
+pixi run -e export export-xfeat
+```
