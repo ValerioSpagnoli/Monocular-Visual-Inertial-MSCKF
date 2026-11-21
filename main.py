@@ -63,6 +63,8 @@ parser_args.add_argument('--only_imu', action='store_true',
                         help='Propagate with the IMU only, without visual updates (diagnostics)')
 parser_args.add_argument('--no_viewer', action='store_true',
                         help='Do not stream to Rerun (faster, for evaluations)')
+parser_args.add_argument('--backend', type=str, default='python', choices=['python', 'cpp'],
+                        help='Filter implementation: Python, or the C++ core (build it with `pixi run build-cpp`)')
 parser_args.add_argument('--device', type=str, default='auto',
                         choices=['auto', 'cpu', 'mps', 'cuda'],
                         help='Torch device for XFeat feature extraction')
@@ -85,6 +87,7 @@ print(f'  - max_frames: {max_frames}')
 print(f'  - noise_level: {noise_level}')
 print(f'  - save_results: {save_results}')
 print(f'  - device: {device}')
+print(f'  - backend: {args.backend}')
 print(f'  - no_viewer: {no_viewer}')
 
 
@@ -218,12 +221,16 @@ msckf_parameters = MSCKFParameters(
     device=device
 )
 
-msckf = MSCKF(parameters=msckf_parameters, rr=rr)
+if args.backend == 'cpp':
+    from src.msckf.cpp_backend import CppMSCKF
+    msckf = CppMSCKF(parameters=msckf_parameters, rr=rr)
+else:
+    msckf = MSCKF(parameters=msckf_parameters, rr=rr)
 
 
 #** Rerun
 # ========================================================================================== #
-T_I_C = T_W_C if source == 'euroc' else msckf.state.imu.T_W_I.inv() * T_W_C # camera pose in the IMU frame
+T_I_C = T_W_C # camera pose in the IMU frame (the static IMU frame of the filter is the identity)
 visualizer = RerunVisualizer(K=K, width=width, height=height, T_I_C=T_I_C,
                              save_path=f'{experiment_folder}/recording.rrd' if save_results else None, enabled=not no_viewer)
 

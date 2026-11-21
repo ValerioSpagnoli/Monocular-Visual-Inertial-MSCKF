@@ -7,3 +7,6 @@ __pycache__/
 # ignore all the files and folders into data/ but not data/.gitkeep
 data/*
 !data/.gitkeep
+
+# C++ build output
+build/

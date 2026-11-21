@@ -25,8 +25,9 @@ PATTERNS = {
     'inside': r'Inside 3σ:\s+([\d.]+) %',
     'nees_p': r'Mean NEES:\s+position ([\d.]+)',
     'nees_r': r'orientation ([\d.]+) \(consistent',
-    'hz_camera': r'With Camera:\s+[\d.]+ s - ([\d.]+) Hz',
-    'hz_imu': r'Without Camera:\s+[\d.]+ s - ([\d.]+) Hz',
+    'hz_camera': r'With Camera:\s+[\d.eE+-]+ s - ([\d.]+) Hz',
+    'hz_imu': r'Without Camera:\s+[\d.eE+-]+ s - ([\d.]+) Hz',
+    'realtime': r'Real-time factor: ([\d.]+)',
 }
 
 
@@ -45,10 +46,10 @@ if __name__ == '__main__':
     args, extra = parser.parse_known_args()
     extra = [a for a in extra if a != '--']
 
-    print(f'| Sequence | Distance | ATE RMSE | Orient. RMSE | Inside 3σ | NEES pos / orient | Camera loop | IMU loop | Wall time |')
-    print(f'|---|---|---|---|---|---|---|---|---|')
+    print(f'| Sequence | Distance | ATE RMSE | Orient. RMSE | Inside 3σ | NEES pos / orient | Camera loop | IMU loop | Real-time factor | Wall time |')
+    print(f'|---|---|---|---|---|---|---|---|---|---|')
     for source, sequence, sequence_args in SEQUENCES:
         if args.only and args.only not in sequence: continue
         r = run(source, sequence, sequence_args + extra)
         print(f"| {sequence} | {r['distance']:.1f} m | {r['ate']:.3f} m | {r['aoe']:.2f}° | {r['inside']:.1f} % | "
-              f"{r['nees_p']:.1f} / {r['nees_r']:.1f} | {r['hz_camera']:.1f} Hz | {r['hz_imu']:.0f} Hz | {r['wall']:.0f} s |", flush=True)
+              f"{r['nees_p']:.1f} / {r['nees_r']:.1f} | {r['hz_camera']:.1f} Hz | {r['hz_imu']:.0f} Hz | {r['realtime']:.2f} | {r['wall']:.0f} s |", flush=True)
