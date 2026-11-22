@@ -65,25 +65,60 @@ Msckf::Msckf(const Parameters& parameters) : parameters_(parameters) {
 //* ========================================================================================== *//
 
 void Msckf::addImu(const ImuMeasurement& measurement) {
-    if (!first_image_arrived_) {
+    if (!first_image_arrived_ || (!imu_.initialized && parameters_.static_window > 0.0)) {
         imu_buffer_.push_back(measurement);
         return;
     }
-    if (!imu_.initialized) {
-        imu_.initialize(imu_buffer_, parameters_.estimate_initial_gyroscope_bias);
-        if (parameters_.initial_tilt_covariance_from_noise && imu_buffer_.size() > 1) {
-            // The gravity direction comes from the mean of N noisy samples: sigma_f = density / sqrt(dt) per sample,
-            // so the tilt error has variance sigma_f^2 / (N g^2)
-            const double n = static_cast<double>(imu_buffer_.size());
-            const double dt = (imu_buffer_.back().timestamp - imu_buffer_.front().timestamp) / (n - 1.0);
-            if (dt > 0.0) {
-                const double variance = std::pow(parameters_.accelerometer_noise_density, 2) / dt / (n * imu_.gravity.squaredNorm());
-                covariance_.topLeftCorner<3, 3>() += variance * Mat3::Identity();
-            }
-        }
-        for (const auto& buffered : imu_buffer_) processImu(buffered);
-    }
+    if (!imu_.initialized) initializeImu();
     processImu(measurement);
+}
+
+void Msckf::initializeImu() {
+    imu_.initialize(imu_buffer_, parameters_.estimate_initial_gyroscope_bias);
+    imu_.timestamp = imu_buffer_.front().timestamp;  // the first buffered sample is integrated with dt = 0
+    if (parameters_.initial_tilt_covariance_from_noise && imu_buffer_.size() > 1) {
+        // The gravity direction comes from the mean of N noisy samples: sigma_f = density / sqrt(dt) per sample,
+        // so the tilt error has variance sigma_f^2 / (N g^2)
+        const double n = static_cast<double>(imu_buffer_.size());
+        const double dt = (imu_buffer_.back().timestamp - imu_buffer_.front().timestamp) / (n - 1.0);
+        if (dt > 0.0) {
+            const double variance = std::pow(parameters_.accelerometer_noise_density, 2) / dt / (n * imu_.gravity.squaredNorm());
+            covariance_.topLeftCorner<3, 3>() += variance * Mat3::Identity();
+        }
+    }
+    for (const auto& buffered : imu_buffer_) processImu(buffered);
+    imu_buffer_.clear();
+}
+
+bool Msckf::staticInitialization(const FrameFeatures& features) {
+    if (imu_buffer_.empty()) return false;
+    const double timestamp = imu_buffer_.back().timestamp;  // the IMU samples up to the image were added before it
+    // Median displacement of the mutual nearest neighbours with the previous image (as the zero-velocity detection)
+    bool still = false;
+    if (!static_previous_.keypoints.empty() && !features.keypoints.empty()) {
+        const Eigen::MatrixXf similarity = static_previous_.descriptors.rowwise().normalized() * features.descriptors.rowwise().normalized().transpose();
+        std::vector<double> displacements;
+        for (Eigen::Index i = 0; i < similarity.rows(); ++i) {
+            Eigen::Index j, i_back;
+            const float value = similarity.row(i).maxCoeff(&j);
+            similarity.col(j).maxCoeff(&i_back);
+            if (i_back == i && value > parameters_.min_cosine_similarity)
+                displacements.push_back((features.keypoints[static_cast<std::size_t>(j)] - static_previous_.keypoints[static_cast<std::size_t>(i)]).norm());
+        }
+        if (displacements.size() >= 20) {
+            std::nth_element(displacements.begin(), displacements.begin() + displacements.size() / 2, displacements.end());
+            still = displacements[displacements.size() / 2] < parameters_.static_max_disparity;
+        }
+    }
+    static_previous_ = features;
+    if (!still) static_since_ = timestamp;
+
+    // Keep only the IMU samples of the current static interval
+    const auto first = std::find_if(imu_buffer_.begin(), imu_buffer_.end(), [&](const ImuMeasurement& m) { return m.timestamp > static_since_; });
+    imu_buffer_.erase(imu_buffer_.begin(), first);
+    if (!still || timestamp - static_since_ < parameters_.static_window || imu_buffer_.size() < 2) return false;
+    static_previous_ = FrameFeatures();
+    return true;
 }
 
 void Msckf::processImu(const ImuMeasurement& measurement) {
@@ -138,6 +173,10 @@ void Msckf::addImage(const FrameFeatures& features) {
     updated_feature_ids_.clear();
     gated_feature_ids_.clear();
     first_image_arrived_ = true;
+    if (!imu_.initialized && parameters_.static_window > 0.0) {
+        if (!staticInitialization(features)) return;
+        initializeImu();
+    }
     if (!imu_.initialized || parameters_.only_imu) return;
 
     augmentState();

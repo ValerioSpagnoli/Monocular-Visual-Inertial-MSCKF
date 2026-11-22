@@ -86,13 +86,14 @@ Main options (`pixi run main --help` for all of them):
 - `--loop_closure`: keyframe-based loop closure; the summary also reports the loop-corrected ATE
 - `--save_results`: `results.txt`, `trajectory.csv` and the Rerun recording in `data/euroc/<sequence>/results`
 - `--no_viewer`: do not stream to Rerun
+- `--static_window` (1 s): the filter starts once the image features stayed still for this long, with gravity and gyroscope bias from the IMU samples of that interval (the Machine Hall sequences start moving); 0 starts at the first image
 - `--coreml`: run XFeat with CoreML on Apple hardware
 - Features: `--features xfeat|liftfeat|orb|sift|akaze` (default `xfeat`), `--top_k` (800 for ORB, 300 otherwise), `--min_cosine_similarity` (default per features). `models/liftfeat.onnx` is generated locally with `pixi run -e export export-liftfeat` (LiftFeat has no license, so it is not committed).
 - Tuning: `--sigma_image`, `--imu_noise_scale` (default ×10 on the datasheet white noise), `--imu_walk_scale`, `--epipolar_threshold`, `--max_triangulation_error`, `--zupt_max_disparity`, `--min_parallax`, `--max_track_length`
 
 ### Benchmark
 ```bash
-pixi run benchmark                  # EuRoC V1_01-03, markdown table
+pixi run benchmark                  # EuRoC MH_01-05 and V1_01-03 (those in data/euroc), markdown table
 pixi run benchmark --loop_closure   # extra options are forwarded to msckf_run
 ```
 

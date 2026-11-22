@@ -29,6 +29,12 @@ struct Parameters {
     // covariance (C++ only; false reproduces the Python implementation)
     bool initial_tilt_covariance_from_noise = true;
     Eigen::Matrix<double, 15, 1> initial_covariance_diagonal = Eigen::Matrix<double, 15, 1>::Zero();  // [δθ, δbg, δv, δba, δp]
+    // Static initialization: wait for this long with the image features still (median displacement between consecutive
+    // images below static_max_disparity) and initialize from the IMU samples of that window. The accelerometer alone
+    // cannot tell: the vibration of spinning rotors at rest exceeds that of slow motion. 0: initialize at the first
+    // image with the IMU samples before it, assuming a static start.
+    double static_window = 0.0;                    // [s]
+    double static_max_disparity = 1.0;             // [px]
 
     // Features
     double min_cosine_similarity = 0.82;
@@ -122,6 +128,9 @@ private:
     };
 
     void processImu(const ImuMeasurement& measurement);
+    void initializeImu();
+    /// Static initialization: true once the image features stayed still for static_window.
+    bool staticInitialization(const FrameFeatures& features);
     void augmentState();
     void addCameraMeasurements(const FrameFeatures& frame);
     void zeroVelocityUpdate();
@@ -150,6 +159,9 @@ private:
     std::map<long long, Feature> features_;
     std::vector<ImuMeasurement> imu_buffer_;
     bool first_image_arrived_ = false;
+    // Static initialization: features of the previous image and start of the current static interval
+    FrameFeatures static_previous_;
+    double static_since_ = -1.0;
     long long last_feature_id_ = 0;
     LastMeasurement last_measurement_;
 

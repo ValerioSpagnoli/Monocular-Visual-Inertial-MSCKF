@@ -237,6 +237,16 @@ Il limite è il numero di keypoint. Con più keypoint ORB migliorano odometria e
 Il default per ORB è ora 800 keypoint: 0,230 / 0,177 m a 54 Hz, meglio di XFeat sia in accuratezza sia in velocità (le singole configurazioni oscillano per la variabilità del filtro, la tendenza è chiara). Per arrivarci il tracking è stato reso lineare nel numero di feature: la rimozione delle righe dei descrittori dell'ultima immagine copiava la matrice una volta per feature persa (O(n²) per immagine, ora una copia sola) e gli argmax del mutual nearest neighbour sono calcolati in una passata sulla matrice di similarità. Con 800 keypoint da 22 a 54 Hz, risultati identici.
 LiftFeat (ICRA 2025): esportazione pronta, da valutare.
 
+### Machine Hall (MH_01–05) e inizializzazione statica
+Le sequenze MH partono in movimento (0,5–0,8 m/s secondo la ground truth, con il drone portato a mano) mentre l'inizializzazione assumeva una partenza da fermo con i ~10 campioni IMU prima della seconda immagine: XFeat divergeva su MH_01 (ATE 70 km). L'accelerometro da solo non distingue la quiete: a terra con i rotori accesi (V1) la deviazione standard arriva a 1,5 m/s², più che in un movimento lento. Il filtro ora parte quando le feature restano ferme per `--static_window` (1 s, spostamento mediano tra immagini consecutive sotto 1 px, lo stesso criterio della ZUPT), con gravità e bias del giroscopio dai campioni IMU di quell'intervallo; l'ATE è valutato dall'inizializzazione. MH_01 e MH_02 partono a 21 e 27 s, le altre sequenze a ~1 s.
+
+| | MH_01 | MH_02 | MH_03 | MH_04 | MH_05 | media MH | media V1 |
+|---|---|---|---|---|---|---|---|
+| XFeat 300 | 0,326 / 0,326 | 0,236 / 0,226 | 0,274 / 0,191 | 0,651 / 0,365 | 0,589 / 0,240 | 0,415 / 0,270 | 0,271 / 0,185 |
+| ORB 800 | 0,360 / 0,280 | 0,639 / 0,631 | 0,320 / 0,283 | 0,866 / 0,575 | 0,607 / 0,426 | 0,559 / 0,439 | 0,237 / 0,187 |
+
+(ATE / ATE con loop closure, in metri.) Su V1 il cambio di inizializzazione è dentro la variabilità del filtro. Su MH ORB perde nettamente: MH_04 e MH_05 sono buie e su MH_02 l'odometria ORB sbaglia già (0,64 m contro 0,24): i 17 loop non bastano a correggerla. Gli errori su MH_04/05 sono alti per entrambi (0,6–0,9 m su ~95 m): da indagare (scena buia, feature lontane nella sala macchine).
+
 ---
 
 ## Fase 4 — Esecuzione su smartphone

@@ -178,3 +178,40 @@ TEST_CASE("Filter with a static IMU stays at rest") {
     CHECK(near(filter.imu().T_W_I.t, Vec3::Zero(), 1e-6));
     CHECK(near(filter.imu().v_W_I, Vec3::Zero(), 1e-6));
 }
+
+TEST_CASE("Static initialization waits for still features") {
+    rng.seed(7);
+    Parameters parameters;
+    parameters.K = K;
+    parameters.static_window = 0.5;
+    Msckf filter(parameters);
+    const Vec3 f = -parameters.gravity;
+
+    // Random descriptors of 50 points, shifted by 5 px per image while moving, still afterwards
+    const int n = 50;
+    std::vector<Vec2> base;
+    Eigen::MatrixXf descriptors = Eigen::MatrixXf::Random(n, 64);
+    for (int i = 0; i < n; ++i) base.push_back(Vec2(320.0, 240.0) + 100.0 * randomVector().head<2>());
+    auto frame = [&](double shift) {
+        FrameFeatures features;
+        for (const Vec2& u : base) features.keypoints.push_back(u + Vec2(shift, 0.0));
+        features.descriptors = descriptors;
+        features.scores.assign(n, 1.0f);
+        return features;
+    };
+
+    double t = 0.0, shift = 0.0;
+    auto image = [&](bool moving) {  // 20 Hz images, 200 Hz IMU (tilted specific force while moving)
+        for (int k = 0; k < 10; ++k, t += 0.005) filter.addImu({t, Vec3::Zero(), moving ? Vec3(1.0, 0.0, 9.81) : f});
+        if (moving) shift += 5.0;
+        filter.addImage(frame(shift));
+    };
+    for (int k = 0; k < 20; ++k) image(true);
+    CHECK_FALSE(filter.imu().initialized);
+    for (int k = 0; k < 8; ++k) image(false);
+    CHECK_FALSE(filter.imu().initialized);  // still for 0.35 s
+    for (int k = 0; k < 5; ++k) image(false);
+    REQUIRE(filter.imu().initialized);      // still for 0.6 s
+    // Gravity from the static samples only (the moving ones would tilt it by ~6 deg)
+    CHECK(near(filter.imu().T_W_I.R.transpose() * Vec3::UnitZ(), Vec3::UnitZ(), 1e-6));
+}

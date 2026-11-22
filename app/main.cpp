@@ -46,6 +46,7 @@ struct Options {
     double sigma_image = 2.0;
     double max_triangulation_error = 6.0;
     double zupt_max_disparity = 1.0;
+    double static_window = 1.0;
     double epipolar_threshold = 10.0;
     double init_sigma_theta = 0.05;
     double init_sigma_ba = 0.5;
@@ -85,6 +86,7 @@ int main(int argc, char** argv) {
     app.add_option("--top_k", o.top_k, "Keypoints per image (default per descriptor: 800 for ORB, 300 otherwise)");
     app.add_option("--sigma_image", o.sigma_image, "Standard deviation of a keypoint measurement [px]");
     app.add_option("--max_triangulation_error", o.max_triangulation_error, "Maximum RMS reprojection error of a triangulated feature [px]");
+    app.add_option("--static_window", o.static_window, "Initialize after the image features stayed still for this long [s] (0: at the first image)");
     app.add_option("--zupt_max_disparity", o.zupt_max_disparity, "Zero-velocity update below this median feature displacement [px]");
     app.add_option("--epipolar_threshold", o.epipolar_threshold, "Sampson distance above which a match is rejected [px]");
     app.add_option("--init_sigma_theta", o.init_sigma_theta, "Initial orientation standard deviation [rad]");
@@ -149,6 +151,8 @@ int main(int argc, char** argv) {
     p.max_number_of_camera_states = 30;
     p.max_triangulation_error = o.max_triangulation_error;
     p.zupt_max_disparity = o.zupt_max_disparity;
+    p.static_window = o.static_window;
+    p.static_max_disparity = o.zupt_max_disparity;
     p.max_track_length = o.max_track_length;
     p.update_features_on_prune = !o.no_update_on_prune;
     VioSystem system(p, o.loop, o.loop_closure);
@@ -184,6 +188,7 @@ int main(int argc, char** argv) {
     std::future<std::pair<cv::Mat, FrameFeatures>> next_frame = std::async(std::launch::async, load, camera_index);
 
     Evaluator evaluator;
+    double initialization_time = -1.0;
     std::vector<double> loop_time, loop_time_camera, loop_time_imu;
     std::ofstream trajectory;
     if (o.save_results) {
@@ -219,7 +224,12 @@ int main(int argc, char** argv) {
         const Msckf& filter = system.filter();
         const Pose estimate = system.odometryPose();
         const std::optional<Pose> corrected = o.loop_closure ? std::optional<Pose>(system.correctedPose()) : std::nullopt;
-        const bool evaluated = evaluator.add(estimate, filter.covariance().block<3, 3>(12, 12), filter.covariance().block<3, 3>(0, 0),
+        if (filter.imu().initialized && initialization_time < 0.0) {
+            initialization_time = measurement.timestamp;
+            std::printf("Initialized at %.2f s\n", initialization_time);
+        }
+        // Evaluated from the initialization (the alignment with the ground truth uses the first evaluated pose)
+        const bool evaluated = filter.imu().initialized && evaluator.add(estimate, filter.covariance().block<3, 3>(12, 12), filter.covariance().block<3, 3>(0, 0),
                                              sequence.ground_truth[i], corrected);
         visualizer.step(static_cast<long long>(i), measurement.timestamp, system, evaluated ? evaluator.alignedGroundTruth() : std::nullopt,
                         camera ? &image : nullptr, evaluator);
