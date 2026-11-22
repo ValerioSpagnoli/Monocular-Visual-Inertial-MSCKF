@@ -283,6 +283,10 @@ Le sequenze MH partono in movimento (0,5–0,8 m/s secondo la ground truth, con 
 
 ---
 
+## Progetti futuri
+- **Mappa ottimizzata**: i landmark mostrati in Rerun sono le triangolazioni del filtro nel frame dell'odometria; l'MSCKF non li tiene nello stato e la loop closure (pose graph 4-dof) corregge solo i keyframe. Opzioni: correggere i punti con `correctAt` all'istante della triangolazione (solo visualizzazione), oppure bundle adjustment di keyframe e punti dopo ogni loop (mappa riusabile, relocalizzazione; serve un solver e un thread separato).
+- **Place recognition**: bag of words per la loop closure con ORB.
+
 ## Convenzioni di lavoro
 - Un commit per modifica logica, con messaggi descrittivi; **nessun co-author o attribuzione automatica nei commit**.
 - Aggiornare le checkbox di questo file man mano che i passi vengono completati.
