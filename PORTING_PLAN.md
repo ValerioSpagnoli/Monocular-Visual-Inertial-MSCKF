@@ -273,7 +273,7 @@ Le sequenze MH partono in movimento (0,5–0,8 m/s secondo la ground truth, con 
 ### 4.4 Core on-device
 - [x] Filtro portato in C++17/Eigen (`ce8c152`, `cpp/`): `Msckf::addImu` / `Msckf::addImage(keypoints, descriptors, scores)`. Parità con il Python ~1e-12 sullo scenario sintetico (`tests/test_cpp_parity.py`), unit test Catch2, binding pybind11 (`--backend cpp`), cross-compilazione con `pixi run build-android`.
   - EuRoC V1_01 30 s: frame con camera 50 → 22 ms (ormai in attesa di XFeat), passo IMU 106 → 35 µs, fattore di tempo reale 1,01 → 0,45.
-  - [ ] Installare l'NDK (Android Studio → SDK Tools → NDK) e verificare `pixi run build-android`.
+  - [x] Installare l'NDK (Android Studio → SDK Tools → NDK) e verificare `pixi run build-android`: con l'NDK 30.0 il backend compila senza warning per arm64-v8a (API 24).
   - [ ] Layer JNI e app Kotlin minima.
 - [ ] Gestire i thread (front-end, back-end), le code dei sensori e i frame persi.
 - [ ] Visualizzazione minima della traiettoria nell'app; log su file per il debug.
