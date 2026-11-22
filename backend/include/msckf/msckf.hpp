@@ -118,7 +118,7 @@ private:
         Eigen::MatrixXf descriptors;
         std::vector<long long> feature_ids;
         bool valid = false;
-        void erase(long long feature_id);
+        void erase(const std::vector<long long>& removed_ids);  // one copy of the descriptors for all of them
     };
 
     void processImu(const ImuMeasurement& measurement);

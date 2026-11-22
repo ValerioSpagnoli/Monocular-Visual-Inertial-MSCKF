@@ -1,8 +1,10 @@
 #include "msckf/msckf.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <set>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace msckf {
 
@@ -23,27 +25,22 @@ MatX removeBlock(const MatX& P, int start, int count) {
     return out;
 }
 
-/// First index of the maximum (as torch.argmax).
-template <typename Vector>
-Eigen::Index argmax(const Vector& v) {
-    Eigen::Index best = 0;
-    for (Eigen::Index i = 1; i < v.size(); ++i)
-        if (v(i) > v(best)) best = i;
-    return best;
-}
-
 }  // namespace
 
-void Msckf::LastMeasurement::erase(long long feature_id) {
-    const auto it = std::find(feature_ids.begin(), feature_ids.end(), feature_id);
-    if (it == feature_ids.end()) return;
-    const Eigen::Index row = it - feature_ids.begin();
-    const Eigen::Index rows = descriptors.rows();
-    Eigen::MatrixXf reduced(rows - 1, descriptors.cols());
-    reduced.topRows(row) = descriptors.topRows(row);
-    reduced.bottomRows(rows - row - 1) = descriptors.bottomRows(rows - row - 1);
+void Msckf::LastMeasurement::erase(const std::vector<long long>& removed_ids) {
+    if (removed_ids.empty() || feature_ids.empty()) return;
+    const std::unordered_set<long long> removed(removed_ids.begin(), removed_ids.end());
+    std::vector<Eigen::Index> kept_rows;
+    std::vector<long long> kept_ids;
+    for (std::size_t row = 0; row < feature_ids.size(); ++row)
+        if (!removed.count(feature_ids[row])) {
+            kept_rows.push_back(static_cast<Eigen::Index>(row));
+            kept_ids.push_back(feature_ids[row]);
+        }
+    if (kept_ids.size() == feature_ids.size()) return;
+    Eigen::MatrixXf reduced = descriptors(kept_rows, Eigen::all);
     descriptors.swap(reduced);
-    feature_ids.erase(it);
+    feature_ids.swap(kept_ids);
 }
 
 Msckf::Msckf(const Parameters& parameters) : parameters_(parameters) {
@@ -231,9 +228,21 @@ void Msckf::addCameraMeasurements(const FrameFeatures& frame) {
     for (std::size_t i = 0; i < keypoints.size(); ++i) current_descriptors.row(static_cast<Eigen::Index>(i)) = descriptors[i].transpose();
     const Eigen::MatrixXf similarity = last_measurement_.descriptors * current_descriptors.transpose();
 
-    std::vector<Eigen::Index> match12(similarity.rows()), match21(similarity.cols());
-    for (Eigen::Index i = 0; i < similarity.rows(); ++i) match12[i] = argmax(similarity.row(i));
-    for (Eigen::Index j = 0; j < similarity.cols(); ++j) match21[j] = argmax(similarity.col(j));
+    // Argmax of rows and columns in one pass over the (column-major) matrix, first index on ties (as torch.argmax)
+    std::vector<Eigen::Index> match12(similarity.rows(), 0), match21(similarity.cols());
+    std::vector<float> best12(similarity.rows(), -std::numeric_limits<float>::infinity());
+    for (Eigen::Index j = 0; j < similarity.cols(); ++j) {
+        const float* column = similarity.col(j).data();
+        Eigen::Index best_row = 0;
+        for (Eigen::Index i = 0; i < similarity.rows(); ++i) {
+            if (column[i] > column[best_row]) best_row = i;
+            if (column[i] > best12[i]) {
+                best12[i] = column[i];
+                match12[i] = j;
+            }
+        }
+        match21[j] = best_row;
+    }
 
     std::vector<std::pair<long long, std::size_t>> matches;  // (feature id, current keypoint)
     std::vector<bool> previous_matched(similarity.rows(), false), current_matched(similarity.cols(), false);
@@ -609,8 +618,8 @@ void Msckf::removeFeatures(const std::vector<long long>& feature_ids) {
     for (long long id : feature_ids) {
         features_.erase(id);
         triangulated_points_.erase(id);  // bounded memory on long trajectories
-        last_measurement_.erase(id);
     }
+    last_measurement_.erase(feature_ids);
     std::vector<long long> unused_cameras;
     for (const auto& [camera_id, clone] : cameras_) {
         bool observed = false;
@@ -647,8 +656,8 @@ void Msckf::removeCameras(const std::vector<long long>& camera_ids) {
     for (long long id : empty_features) {
         features_.erase(id);
         triangulated_points_.erase(id);
-        last_measurement_.erase(id);
     }
+    last_measurement_.erase(empty_features);
 }
 
 }  // namespace msckf
