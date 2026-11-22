@@ -224,7 +224,18 @@ EuRoC V1_01–03, 300 keypoint, soglia di matching tarata per ciascuna senza loo
 | AKAZE | 0,268 m | 0,205 m | 30 Hz |
 
 L'odometria è alla pari (differenze dentro la variabilità del filtro, ~8 %): la verifica epipolare con le pose del filtro compensa descrittori meno robusti. ORB è 2,3 volte più veloce di XFeat ed è il candidato per lo smartphone; perde nella loop closure.
-Tuning della loop closure per ORB (similarità dei match 0,6, 10 inlier PnP): 0,239 → 0,224 m. La soglia sulla similarità globale non conta (si verificano comunque i 5 candidati migliori) e verificarne 10 o 20 trova più loop senza ridurre l'ATE. Il limite è la qualità dei loop, soprattutto su V1_01 (0,344 → 0,332 m con 12 loop, contro 0,310 → 0,251 m di XFeat): per andare oltre serve un place recognition migliore (bag of words) o la selezione dei candidati vicini alla posa stimata. LiftFeat (ICRA 2025): esportazione pronta, da valutare.
+Tuning della loop closure per ORB (similarità dei match 0,6, 10 inlier PnP): 0,239 → 0,224 m. La soglia sulla similarità globale non conta (si verificano comunque i 5 candidati migliori) e verificarne 10 o 20 trova più loop senza ridurre l'ATE.
+Provati anche i candidati vicini alla posa corretta (raggio 1,5–5 m, direzione di vista entro 30–60°) e il matching guidato dalla proiezione dei landmark (finestra 40–80 px, soglia di similarità 0,4–0,5, come la search by projection di ORB-SLAM): nessun guadagno (0,224–0,231 m), scartati. Il recupero dei candidati non è il limite: i keyframe vicini ci sono, ma con 300 keypoint i descrittori ORB danno meno di 10 match tra viste diverse dello stesso posto.
+Il limite è il numero di keypoint. Con più keypoint ORB migliorano odometria e loop closure, mentre XFeat oltre 300 non guadagna (800: 0,259 / 0,192 m):
+
+| ORB, keypoint | 300 | 400 | 500 | 600 | 700 | 800 | 1000 |
+|---|---|---|---|---|---|---|---|
+| ATE | 0,268 | 0,257 | 0,251 | 0,240 | 0,248 | 0,230 | 0,231 |
+| ATE con loop closure | 0,224 | 0,232 | 0,216 | 0,188 | 0,233 | 0,177 | 0,210 |
+| Frequenza camera | 108 Hz | | 87 Hz | 77 Hz | | 54 Hz | |
+
+Il default per ORB è ora 800 keypoint: 0,230 / 0,177 m a 54 Hz, meglio di XFeat sia in accuratezza sia in velocità (le singole configurazioni oscillano per la variabilità del filtro, la tendenza è chiara). Per arrivarci il tracking è stato reso lineare nel numero di feature: la rimozione delle righe dei descrittori dell'ultima immagine copiava la matrice una volta per feature persa (O(n²) per immagine, ora una copia sola) e gli argmax del mutual nearest neighbour sono calcolati in una passata sulla matrice di similarità. Con 800 keypoint da 22 a 54 Hz, risultati identici.
+LiftFeat (ICRA 2025): esportazione pronta, da valutare.
 
 ---
 

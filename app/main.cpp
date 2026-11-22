@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
     app.add_flag("--only_imu", o.only_imu, "Propagate with the IMU only (diagnostics)");
     app.add_flag("--loop_closure", o.loop_closure, "Enable loop closure on keyframes");
     app.add_flag("--coreml", o.coreml, "Run XFeat with CoreML (Apple GPU / Neural Engine)");
-    app.add_option("--top_k", o.top_k, "Keypoints per image");
+    app.add_option("--top_k", o.top_k, "Keypoints per image (default per descriptor: 800 for ORB, 300 otherwise)");
     app.add_option("--sigma_image", o.sigma_image, "Standard deviation of a keypoint measurement [px]");
     app.add_option("--max_triangulation_error", o.max_triangulation_error, "Maximum RMS reprojection error of a triangulated feature [px]");
     app.add_option("--zupt_max_disparity", o.zupt_max_disparity, "Zero-velocity update below this median feature displacement [px]");
@@ -129,11 +129,14 @@ int main(int argc, char** argv) {
         Vec3::Constant(0.01 * 0.01), Vec3::Constant(o.init_sigma_ba * o.init_sigma_ba), Vec3::Zero();
     //* Matching thresholds per descriptor: cosine similarity of the normalized descriptors (for binary descriptors
     //* 1 - 2 Hamming / bits) for frame-to-frame tracking and for loop closure, where the viewpoint change is larger,
-    //* and PnP inliers of a loop. Tracking tuned on EuRoC V1_01-03 without loop closure, the ORB loop closure with it.
-    struct Defaults { double tracking, loop; int loop_inliers; float detection; };
-    const std::map<std::string, Defaults> defaults{{"xfeat", {0.95, 0.7, 15, 0.05f}}, {"liftfeat", {0.95, 0.7, 15, 0.1f}}, {"orb", {0.5, 0.6, 10, 0.0f}},
-                                                   {"akaze", {0.9, 0.7, 15, 0.0f}}, {"sift", {0.97, 0.85, 15, 0.0f}}};
+    //* PnP inliers of a loop and keypoints per image. Tracking tuned on EuRoC V1_01-03 without loop closure, the ORB loop
+    //* closure and keypoints with it (more ORB keypoints improve odometry and loops, XFeat gains nothing beyond 300).
+    struct Defaults { double tracking, loop; int loop_inliers; float detection; int top_k; };
+    const std::map<std::string, Defaults> defaults{{"xfeat", {0.95, 0.7, 15, 0.05f, 300}}, {"liftfeat", {0.95, 0.7, 15, 0.1f, 300}},
+                                                   {"orb", {0.5, 0.6, 10, 0.0f, 800}}, {"akaze", {0.9, 0.7, 15, 0.0f, 300}},
+                                                   {"sift", {0.97, 0.85, 15, 0.0f, 300}}};
     const Defaults& d = defaults.at(o.features);
+    if (!app.count("--top_k")) o.top_k = d.top_k;
     p.min_cosine_similarity = o.min_cosine_similarity > 0 ? o.min_cosine_similarity : d.tracking;
     if (!app.count("--lc_descriptor_similarity")) o.loop.min_descriptor_similarity = d.loop;
     if (!app.count("--lc_min_inliers")) o.loop.min_inliers = d.loop_inliers;

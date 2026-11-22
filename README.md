@@ -87,7 +87,7 @@ Main options (`pixi run main --help` for all of them):
 - `--save_results`: `results.txt`, `trajectory.csv` and the Rerun recording in `data/euroc/<sequence>/results`
 - `--no_viewer`: do not stream to Rerun
 - `--coreml`: run XFeat with CoreML on Apple hardware
-- Features: `--features xfeat|liftfeat|orb|sift|akaze` (default `xfeat`), `--top_k` (300), `--min_cosine_similarity` (default per features). `models/liftfeat.onnx` is generated locally with `pixi run -e export export-liftfeat` (LiftFeat has no license, so it is not committed).
+- Features: `--features xfeat|liftfeat|orb|sift|akaze` (default `xfeat`), `--top_k` (800 for ORB, 300 otherwise), `--min_cosine_similarity` (default per features). `models/liftfeat.onnx` is generated locally with `pixi run -e export export-liftfeat` (LiftFeat has no license, so it is not committed).
 - Tuning: `--sigma_image`, `--imu_noise_scale` (default ×10 on the datasheet white noise), `--imu_walk_scale`, `--epipolar_threshold`, `--max_triangulation_error`, `--zupt_max_disparity`, `--min_parallax`, `--max_track_length`
 
 ### Benchmark
