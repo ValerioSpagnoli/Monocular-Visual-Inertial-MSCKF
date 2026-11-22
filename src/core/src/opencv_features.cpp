@@ -1,4 +1,4 @@
-#include "msckf_frontend/opencv_features.hpp"
+#include "msckf/opencv_features.hpp"
 
 #include <algorithm>
 #include <cmath>

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cross-compile the backend (static library) for Android with the NDK.
+# Cross-compile the core (static library, filter only for now) for Android with the NDK.
 #
 #   pixi run build-android                 # arm64-v8a, API level 24
 #   ABI=x86_64 pixi run build-android      # e.g. for the emulator
@@ -28,8 +28,8 @@ cmake -S "$ROOT" -B "$ROOT/build/android-$ABI" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="$ABI" -DANDROID_PLATFORM="android-$API" -DANDROID_STL=c++_shared \
     -DCMAKE_BUILD_TYPE=Release \
-    -DMSCKF_BUILD_TESTS=OFF -DMSCKF_BUILD_FRONTEND=OFF -DMSCKF_BUILD_APP=OFF \
+    -DMSCKF_BUILD_TESTS=OFF -DMSCKF_BUILD_FEATURES=OFF -DMSCKF_BUILD_APP=OFF \
     -DEigen3_DIR="$CONDA_PREFIX/share/eigen3/cmake" \
     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
 cmake --build "$ROOT/build/android-$ABI"
-echo "Built $ROOT/build/android-$ABI/libmsckf_backend.a"
+echo "Built $ROOT/build/android-$ABI/libmsckf_core.a"

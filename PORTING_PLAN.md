@@ -185,9 +185,9 @@ Sequenze complete: V1_02 0,77, TartanAir P001 0,80. Risultati invariati (differe
 ## Fase 3b — Progetto solo C++ (completata)
 
 Il codice Python è stato rimosso (`44d54d2`); resta su `main` e nella cronologia. Struttura attuale:
-- **Backend** (`backend/`, solo Eigen): MSCKF, triangolazione Gauss-Newton, ZUPT, loop closure con grafo delle pose a 4 gradi di libertà, `VioSystem`. Cross-compila con l'NDK (`pixi run build-android`).
-- **Frontend** (`frontend/`, OpenCV + ONNX Runtime): XFeat da `models/xfeat.onnx`, stessi keypoint di PyTorch (descrittori entro 5e-6), 17 ms per immagine su CPU.
-- **Applicazione** (`app/`): `msckf_run` (EuRoC, valutazione, Rerun). `pixi run build`, `pixi run main`, `pixi run benchmark`, `pixi run test`.
+- **Filtro** (`src/core/`, solo Eigen): MSCKF, triangolazione Gauss-Newton, ZUPT, loop closure con grafo delle pose a 4 gradi di libertà, `VioSystem`. Cross-compila con l'NDK (`pixi run build-android`).
+- **Feature** (`src/core/`, OpenCV + ONNX Runtime, opzionali con `MSCKF_BUILD_FEATURES`): XFeat da `models/xfeat.onnx`, stessi keypoint di PyTorch (descrittori entro 5e-6), 17 ms per immagine su CPU.
+- **Applicazione** (`src/app/`): `msckf_run` (EuRoC, valutazione, Rerun). `pixi run build`, `pixi run main`, `pixi run benchmark`, `pixi run test`.
 - Strumenti in `tools/`, submodule XFeat in `third_party/`. TartanAir/PeringLab e il generatore IMU rimossi (`aad5f7f`): solo EuRoC.
 - Export di XFeat: ambiente separato `pixi run -e export export-xfeat`.
 - Non portata: la sorgente completamente sintetica (`synthetic_generator.py`).
@@ -209,6 +209,7 @@ Da fare per la loop closure: descrittore globale discriminante (oggi la media de
 
 ### Struttura (`b56d769`) e prova del tracking nel frontend
 - Repository riorganizzato in `backend/`, `frontend/` e `app/` (ognuno con `include/` e `src/`, e test dove presenti), più `tools/` e `third_party/`.
+- Poi unificato: tutto il codice in `src/`, con `src/core/` (libreria `msckf_core`: filtro e feature, `include/msckf/`, `src/`, `tests/`) e `src/app/` (`include/`, `src/`). Un solo eseguibile di test, `msckf_tests`.
 - Provato a spostare il tracking nel frontend (`fbb940b`), con RANSAC della matrice fondamentale tra immagini consecutive al posto dei test epipolare/omografia sulle pose del filtro: ATE medio EuRoC da 0,268 a 0,287 m. Annullato: il tracking resta nel backend, dove ogni associazione viene verificata contro tutte le osservazioni della traccia con le pose del filtro.
 
 ---

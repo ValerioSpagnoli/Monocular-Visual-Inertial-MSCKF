@@ -1,6 +1,6 @@
 #pragma once
 
-#include "msckf_frontend/feature_extractor.hpp"
+#include "msckf/feature_extractor.hpp"
 
 namespace cv {
 class Feature2D;  // features2d (OpenCV 4) or features (OpenCV 5)
@@ -11,7 +11,7 @@ namespace msckf {
 /// Classical (non-learned) keypoints and descriptors from OpenCV, for comparison with the networks.
 /// Keypoints are spread over the image with a grid (at most top_k / cells per cell first, then the strongest of the
 /// rest), as a VIO frontend needs coverage more than the strongest corners. Descriptors are converted to
-/// L2-normalized float vectors so that the cosine similarity used by the backend is equivalent to the native distance:
+/// L2-normalized float vectors so that the cosine similarity used by the filter is equivalent to the native distance:
 /// binary descriptors (ORB, AKAZE) become ±1/√bits (cosine = 1 - 2 Hamming / bits), SIFT becomes RootSIFT.
 class OpenCvExtractor : public FeatureExtractor {
 public:

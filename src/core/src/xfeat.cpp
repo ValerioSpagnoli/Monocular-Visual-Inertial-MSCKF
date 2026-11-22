@@ -1,4 +1,4 @@
-#include "msckf_frontend/xfeat.hpp"
+#include "msckf/xfeat.hpp"
 
 #include <algorithm>
 #include <array>

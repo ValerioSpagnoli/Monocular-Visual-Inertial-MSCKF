@@ -1,4 +1,4 @@
-// XFeat front-end against a reference saved once from the PyTorch implementation.
+// XFeat extractor against a reference saved once from the PyTorch implementation.
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -6,11 +6,11 @@
 
 #include <opencv2/imgcodecs.hpp>
 
-#include "msckf_frontend/xfeat.hpp"
+#include "msckf/xfeat.hpp"
 
 using namespace msckf;
 
-TEST_CASE("XFeat front-end matches the PyTorch implementation") {
+TEST_CASE("XFeat extractor matches the PyTorch implementation") {
     // Reference saved from XFeat.detectAndCompute (PyTorch, CPU) on an undistorted EuRoC image
     const std::string data = MSCKF_TEST_DATA_DIR;
     const cv::Mat image = cv::imread(data + "/euroc_v1_01_frame_1000.png", cv::IMREAD_GRAYSCALE);

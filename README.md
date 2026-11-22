@@ -35,23 +35,23 @@ These results highlight the system's potential for precise localization in resou
 The original Python implementation of the thesis has been ported to **C++17** (it is still available on the `main` branch and in the history).
 
 ```
-backend/                 filter: MSCKF, IMU, geometry, loop closure, VioSystem (Eigen only, builds for Android)
-  include/msckf/  src/  tests/
-frontend/                feature extraction: XFeat with ONNX Runtime (OpenCV, ONNX Runtime)
-  include/msckf_frontend/  src/  tests/
-app/                     msckf_run: EuRoC datasets, evaluation, Rerun visualization (desktop only)
+src/
+  core/                  library msckf_core: filter and feature extraction
+    include/msckf/  src/  tests/
+  app/                   msckf_run: EuRoC datasets, evaluation, Rerun visualization (desktop only)
+    include/  src/
 models/xfeat.onnx        XFeat network
-tools/                   benchmark.sh, build_android.sh, export_xfeat_onnx.py
-third_party/             XFeat repository (submodule, only used to export the model)
+tools/                   benchmark.sh, build_android.sh, export_xfeat_onnx.py, export_liftfeat_onnx.py
+third_party/             XFeat and LiftFeat repositories (submodules, only used to export the models)
 ```
 
 | Part | Dependencies | Contents |
 |---|---|---|
-| Backend | Eigen | MSCKF (IMU propagation with observability constraint, descriptor matching with epipolar checks, Gauss-Newton triangulation, null-space update, χ² gating, zero-velocity updates), loop closure with a 4-dof pose graph, `VioSystem` entry point. |
-| Frontend | OpenCV, ONNX Runtime | Keypoints and descriptors behind a common `FeatureExtractor`: XFeat from `models/xfeat.onnx` (reproducing `XFeat.detectAndCompute`), LiftFeat with the same interface, ORB, SIFT and AKAZE from OpenCV. |
+| Core: filter | Eigen | MSCKF (IMU propagation with observability constraint, descriptor matching with epipolar checks, Gauss-Newton triangulation, null-space update, χ² gating, static initialization, zero-velocity updates), loop closure with a 4-dof pose graph, `VioSystem` entry point. Builds for Android. |
+| Core: features | OpenCV, ONNX Runtime | Keypoints and descriptors behind a common `FeatureExtractor`: XFeat from `models/xfeat.onnx` (reproducing `XFeat.detectAndCompute`), LiftFeat with the same interface, ORB, SIFT and AKAZE from OpenCV. Optional (`MSCKF_BUILD_FEATURES`). |
 | App | yaml-cpp, CLI11, Rerun C++ SDK | `msckf_run`: EuRoC sequences, evaluation, visualization. |
 
-See [backend/README.md](backend/README.md) for the backend API and the Android build.
+See [src/core/README.md](src/core/README.md) for the API and the Android build.
 
 # Getting Started
 

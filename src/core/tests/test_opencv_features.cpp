@@ -1,10 +1,10 @@
-// Classical OpenCV features in the format of the backend.
+// Classical OpenCV features in the format of the filter.
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <opencv2/imgcodecs.hpp>
 
-#include "msckf_frontend/opencv_features.hpp"
+#include "msckf/opencv_features.hpp"
 
 using namespace msckf;
 

@@ -12,10 +12,10 @@ cmake = ">=3.18"
 ninja = "*"
 cxx-compiler = "*"
 
-# Backend (backend/): Eigen only, so it builds unchanged for Android
+# Filter (src/core/): Eigen only, so it builds unchanged for Android
 eigen = ">=3.4"
 
-# Frontend (frontend/) and desktop application (app/): XFeat inference, images, datasets, command line, visualization
+# Feature extraction (src/core/) and desktop application (src/app/): XFeat inference, images, datasets, command line, visualization
 onnxruntime-cpp = ">=1.20"
 libopencv = ">=4.8"
 yaml-cpp = ">=0.8"
@@ -28,7 +28,7 @@ catch2 = ">=3.4"
 
 [tasks]
 build = "cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build"
-test = { cmd = "build/msckf_backend_tests && build/msckf_frontend_tests", depends-on = ["build"] }
+test = { cmd = "build/msckf_tests", depends-on = ["build"] }
 main = { cmd = "build/msckf_run", depends-on = ["build"] }
 benchmark = { cmd = "bash tools/benchmark.sh", depends-on = ["build"] }
 build-android = "bash tools/build_android.sh"

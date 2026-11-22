@@ -20,8 +20,8 @@
 #include "dataset.hpp"
 #include "evaluation.hpp"
 #include "msckf/vio_system.hpp"
-#include "msckf_frontend/opencv_features.hpp"
-#include "msckf_frontend/xfeat.hpp"
+#include "msckf/opencv_features.hpp"
+#include "msckf/xfeat.hpp"
 #include "visualizer.hpp"
 
 using namespace msckf;
@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
     if (o.save_results) std::filesystem::create_directories(results_folder);
     Visualizer visualizer(sequence, o.no_viewer ? std::nullopt : std::optional<std::string>(o.save_results ? results_folder + "/recording.rrd" : ""));
 
-    //* Front-end in a separate thread: the next image is read, undistorted and passed to XFeat while the filter
+    //* Feature extraction in a separate thread: the next image is read, undistorted and passed to XFeat while the filter
     //* processes the current one (the time spent waiting for it is counted in the loop time)
     auto load = [&](std::size_t index) {
         cv::Mat image = sequence.loadImage(index), gray;

@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 
-#include "msckf_frontend/feature_extractor.hpp"
+#include "msckf/feature_extractor.hpp"
 
 namespace msckf {
 
