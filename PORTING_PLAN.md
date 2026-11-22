@@ -220,10 +220,11 @@ EuRoC V1_01–03, 300 keypoint, soglia di matching tarata per ciascuna senza loo
 |---|---|---|---|
 | XFeat | 0,268 m | 0,191 m | 43 Hz |
 | SIFT (RootSIFT) | 0,242 m | 0,199 m | 25 Hz |
-| ORB | 0,268 m | 0,239 m | 98 Hz |
+| ORB | 0,268 m | 0,224 m | 98 Hz |
 | AKAZE | 0,268 m | 0,205 m | 30 Hz |
 
-L'odometria è alla pari (differenze dentro la variabilità del filtro, ~8 %): la verifica epipolare con le pose del filtro compensa descrittori meno robusti. ORB è 2,3 volte più veloce di XFeat ed è il candidato per lo smartphone; perde nella loop closure (soglia non tarata, descrittore meno invariante al punto di vista). LiftFeat (ICRA 2025): esportazione pronta, da valutare.
+L'odometria è alla pari (differenze dentro la variabilità del filtro, ~8 %): la verifica epipolare con le pose del filtro compensa descrittori meno robusti. ORB è 2,3 volte più veloce di XFeat ed è il candidato per lo smartphone; perde nella loop closure.
+Tuning della loop closure per ORB (similarità dei match 0,6, 10 inlier PnP): 0,239 → 0,224 m. La soglia sulla similarità globale non conta (si verificano comunque i 5 candidati migliori) e verificarne 10 o 20 trova più loop senza ridurre l'ATE. Il limite è la qualità dei loop, soprattutto su V1_01 (0,344 → 0,332 m con 12 loop, contro 0,310 → 0,251 m di XFeat): per andare oltre serve un place recognition migliore (bag of words) o la selezione dei candidati vicini alla posa stimata. LiftFeat (ICRA 2025): esportazione pronta, da valutare.
 
 ---
 

@@ -55,7 +55,6 @@ struct Options {
     int max_track_length = 10;
     bool no_update_on_prune = false;
     LoopClosureParameters loop;
-    bool loop_descriptor_similarity_set = false;
 };
 
 std::string formatTime(const std::vector<double>& times) {
@@ -96,11 +95,12 @@ int main(int argc, char** argv) {
     app.add_option("--max_track_length", o.max_track_length, "Also use tracked features with this many observations (0 disables it)");
     app.add_flag("--no_update_on_prune", o.no_update_on_prune, "Do not use the features of the pruned clones");
     app.add_option("--lc_descriptor_similarity", o.loop.min_descriptor_similarity, "Loop closure: minimum cosine similarity of a descriptor match");
+    app.add_option("--lc_global_similarity", o.loop.min_global_similarity, "Loop closure: minimum similarity of the global descriptors");
+    app.add_option("--lc_candidates", o.loop.candidates, "Loop closure: keyframes checked by geometric verification (best global similarity)");
     app.add_option("--lc_min_inliers", o.loop.min_inliers, "Loop closure: PnP inliers to accept a loop");
     app.add_option("--lc_pnp_threshold", o.loop.pnp_threshold, "Loop closure: reprojection error of a PnP inlier [px]");
     app.add_option("--lc_recent_excluded", o.loop.recent_keyframes_excluded, "Loop closure: candidates must be older than this many keyframes");
     CLI11_PARSE(app, argc, argv);
-    o.loop_descriptor_similarity_set = app.count("--lc_descriptor_similarity") > 0;
 
     //* Sequence
     Sequence sequence = loadEuroc(o.data, o.sequence);
@@ -127,14 +127,16 @@ int main(int argc, char** argv) {
     p.estimate_initial_gyroscope_bias = true;
     p.initial_covariance_diagonal << Vec3::Constant(o.init_sigma_theta * o.init_sigma_theta), Vec3::Constant(0.005 * 0.005),
         Vec3::Constant(0.01 * 0.01), Vec3::Constant(o.init_sigma_ba * o.init_sigma_ba), Vec3::Zero();
-    //* Matching thresholds per descriptor (tracking tuned on EuRoC V1_01-03 without loop closure): cosine similarity of the normalized descriptors (for binary descriptors
-    //* 1 - 2 Hamming / bits) for frame-to-frame tracking and for loop closure, where the viewpoint change is larger
-    struct Defaults { double tracking, loop; float detection; };
-    const std::map<std::string, Defaults> defaults{
-        {"xfeat", {0.95, 0.7, 0.05f}}, {"liftfeat", {0.95, 0.7, 0.1f}}, {"orb", {0.5, 0.5, 0.0f}}, {"akaze", {0.9, 0.7, 0.0f}}, {"sift", {0.97, 0.85, 0.0f}}};
+    //* Matching thresholds per descriptor: cosine similarity of the normalized descriptors (for binary descriptors
+    //* 1 - 2 Hamming / bits) for frame-to-frame tracking and for loop closure, where the viewpoint change is larger,
+    //* and PnP inliers of a loop. Tracking tuned on EuRoC V1_01-03 without loop closure, the ORB loop closure with it.
+    struct Defaults { double tracking, loop; int loop_inliers; float detection; };
+    const std::map<std::string, Defaults> defaults{{"xfeat", {0.95, 0.7, 15, 0.05f}}, {"liftfeat", {0.95, 0.7, 15, 0.1f}}, {"orb", {0.5, 0.6, 10, 0.0f}},
+                                                   {"akaze", {0.9, 0.7, 15, 0.0f}}, {"sift", {0.97, 0.85, 15, 0.0f}}};
     const Defaults& d = defaults.at(o.features);
     p.min_cosine_similarity = o.min_cosine_similarity > 0 ? o.min_cosine_similarity : d.tracking;
-    if (!o.loop_descriptor_similarity_set) o.loop.min_descriptor_similarity = d.loop;
+    if (!app.count("--lc_descriptor_similarity")) o.loop.min_descriptor_similarity = d.loop;
+    if (!app.count("--lc_min_inliers")) o.loop.min_inliers = d.loop_inliers;
     p.use_parallax = true;
     p.min_parallax = o.min_parallax;
     p.epipolar_rejection_threshold = o.epipolar_threshold;
